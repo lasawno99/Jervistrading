@@ -143,6 +143,12 @@ async def _handle_command(client, db, chat_id: int, text: str, kimi_call):
             "/forex_clear · reset forex chat history\n"
             "/jarvis &lt;anything&gt; · unified JARVIS assistant (or /j)\n"
             "/jarvis_clear · reset jarvis memory\n"
+            "/brief · morning brief now\n"
+            "/positions · all open positions (paper + forex)\n"
+            "/balance · account snapshot\n"
+            "/tasks · today's todos + calendar\n"
+            "/paper · paper portfolio summary\n"
+            "/kill · toggle kill switch\n"
             "/help · this menu"
         ))
     elif cmd == "/help":
@@ -274,6 +280,34 @@ async def _handle_command(client, db, chat_id: int, text: str, kimi_call):
     elif cmd == "/jarvis_clear":
         await db.jarvis_sessions.delete_one({"session_id": f"tg_jv_{chat_id}"})
         await _send_message(client, chat_id, "↺ jarvis memory for this chat cleared.")
+    elif cmd in ("/brief", "/positions", "/balance", "/tasks", "/kill", "/paper"):
+        # Telegram shortcuts → delegate to JARVIS with a canned prompt
+        shortcuts = {
+            "/brief":     "Send me my morning brief now.",
+            "/positions": "Show all my open positions across paper bot and forex.",
+            "/balance":   "What's my account balance and P/L right now?",
+            "/tasks":     "What's on my plate today? List open todos and today's calendar.",
+            "/kill":      "Toggle the kill switch and confirm the new state.",
+            "/paper":     "Give me a summary of my paper trading portfolio with positions and P/L.",
+        }
+        prompt = shortcuts[cmd]
+        import jarvis_agent as _jv
+        if not _jv.is_configured():
+            await _send_message(client, chat_id, "⚠ <i>JARVIS offline — add ANTHROPIC_API_KEY.</i>")
+            return
+        sess_key = f"tg_jv_{chat_id}"
+        doc = await db.jarvis_sessions.find_one({"session_id": sess_key}, {"_id": 0})
+        history = doc.get("history", []) if doc else []
+        await _send_message(client, chat_id, "🧠 <i>jarvis processing…</i>")
+        reply, new_history = await _jv.chat(db, history, prompt)
+        await db.jarvis_sessions.update_one(
+            {"session_id": sess_key},
+            {"$set": {"session_id": sess_key, "history": new_history, "updated_at": datetime.now(timezone.utc).isoformat()}},
+            upsert=True,
+        )
+        chunks = [reply[i:i+3800] for i in range(0, len(reply), 3800)] or ["(empty)"]
+        for ch in chunks:
+            await _send_message(client, chat_id, f"<b>🤖 jarvis ▸</b>\n{ch}")
     else:
         await _send_message(client, chat_id, "unknown command. /help")
 
