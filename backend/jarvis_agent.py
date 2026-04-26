@@ -31,6 +31,7 @@ except Exception:
 import oanda_client as oa
 import trading_engine as te
 import fx_strategies as fxs
+import mt5_client as mt5
 
 logger = logging.getLogger("jarvis")
 
@@ -345,6 +346,63 @@ TOOLS = [
             },
         },
     },
+
+    # ---- MT5 (MetaTrader 5 via RPyC bridge) ----
+    {
+        "name": "mt5_status",
+        "description": "Check if MT5 bridge is connected (Windows server reachable).",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "mt5_account",
+        "description": "Get MT5 account: balance, equity, margin, leverage, profit.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "mt5_positions",
+        "description": "List MT5 open positions.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "mt5_tick",
+        "description": "Get latest MT5 tick (bid/ask) for a symbol like 'EURUSD' or 'XAUUSD'.",
+        "input_schema": {"type": "object", "properties": {"symbol": {"type": "string"}}, "required": ["symbol"]},
+    },
+    {
+        "name": "mt5_ohlc",
+        "description": "Get OHLC bars from MT5. timeframe in {M1,M5,M15,M30,H1,H4,D1,W1,MN1}.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string"},
+                "timeframe": {"type": "string", "default": "M5"},
+                "count": {"type": "integer", "default": 200},
+            },
+            "required": ["symbol"],
+        },
+    },
+    {
+        "name": "mt5_market_order",
+        "description": "Place an MT5 market order. Subject to risk gate. side='buy'|'sell'. volume in lots (e.g. 0.01).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "symbol": {"type": "string"},
+                "side": {"type": "string", "enum": ["buy", "sell"]},
+                "volume": {"type": "number"},
+                "stop_loss": {"type": "number"},
+                "take_profit": {"type": "number"},
+                "magic": {"type": "integer", "default": 0},
+                "comment": {"type": "string"},
+            },
+            "required": ["symbol", "side", "volume"],
+        },
+    },
+    {
+        "name": "mt5_close_position",
+        "description": "Close an MT5 position by ticket id.",
+        "input_schema": {"type": "object", "properties": {"ticket": {"type": "integer"}}, "required": ["ticket"]},
+    },
 ]
 
 
@@ -543,6 +601,7 @@ async def _dispatch_tool(db, tool_name: str, tool_input: dict, block_trades: boo
         "paper_trade", "paper_generate_signal",
         "forex_market_order", "forex_close",
         "strategy_start",
+        "mt5_market_order", "mt5_close_position",
     ):
         return json.dumps({"error": "kill switch is engaged. all trading halted."})
     try:
@@ -606,6 +665,20 @@ async def _dispatch_tool(db, tool_name: str, tool_input: dict, block_trades: boo
             res = {"strategies": await fxs.list_strategies(db)}
         elif tool_name == "strategy_events":
             res = {"events": await fxs.list_strategy_events(db, **tool_input)}
+        elif tool_name == "mt5_status":
+            res = mt5.status()
+        elif tool_name == "mt5_account":
+            res = mt5.get_account()
+        elif tool_name == "mt5_positions":
+            res = mt5.get_positions()
+        elif tool_name == "mt5_tick":
+            res = mt5.get_tick(**tool_input)
+        elif tool_name == "mt5_ohlc":
+            res = mt5.get_ohlc(**tool_input)
+        elif tool_name == "mt5_market_order":
+            res = mt5.market_order(**tool_input)
+        elif tool_name == "mt5_close_position":
+            res = mt5.close_position(**tool_input)
         else:
             res = {"error": f"unknown tool {tool_name}"}
         return json.dumps(res, default=str)

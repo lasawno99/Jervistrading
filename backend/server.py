@@ -626,6 +626,36 @@ async def strategies_events(strategy_id: Optional[str] = None, limit: int = 50):
     return {"events": await fxs.list_strategy_events(db, strategy_id, limit)}
 
 
+# ================= MT5 BRIDGE =================
+
+import mt5_client as mt5
+
+
+@api_router.get("/mt5/status")
+async def mt5_status():
+    return mt5.status()
+
+
+@api_router.get("/mt5/account")
+async def mt5_account():
+    return mt5.get_account()
+
+
+@api_router.get("/mt5/positions")
+async def mt5_positions():
+    return mt5.get_positions()
+
+
+@api_router.get("/mt5/tick")
+async def mt5_tick(symbol: str):
+    return mt5.get_tick(symbol)
+
+
+@api_router.get("/mt5/ohlc")
+async def mt5_ohlc(symbol: str, timeframe: str = "M5", count: int = 200):
+    return mt5.get_ohlc(symbol, timeframe, count)
+
+
 # ================= APP WIRING =================
 
 app.include_router(api_router)
