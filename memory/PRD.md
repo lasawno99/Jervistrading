@@ -1,47 +1,89 @@
-# JARVIS // Trade Center — PRD
+# PRD — `forex-agent` (Railway worker)
 
-## Original Problem Statement
-> "Build a Jarvis-style repo: an agent in the center that spawns throughout the dashboard and runs tasks like trading, watches Twitter, schedules meetings, etc."
-> Refined: a 24/7 Telegram-connected paper trading bot powered by **Kimi K2.5**, with a Jarvis-style dashboard as the live monitor view.
+## Original problem statement
 
-## Architecture
-- **Backend**: FastAPI (`/app/backend/server.py`) + MongoDB (motor). Background asyncio tasks for Telegram long-polling and the auto-trader loop.
-- **Trading engine** (`/app/backend/trading_engine.py`): in-memory random-walk price feed for BTC/ETH/OIL/GOLD/TSLA/NVDA, paper account, positions, trades, AI signals.
-- **Telegram bot** (`/app/backend/telegram_bot.py`): raw httpx long-polling, inline-keyboard signal approvals, /start /status /auto /buy /sell /signal /trades commands.
-- **Frontend**: React 19 single-page Jarvis HUD (`/app/frontend/src/App.js`) — central orb + 8 glassmorphic panels + bottom command palette + browser STT/TTS.
+"Build a Python application called `forex-agent`. It is a long-running worker (NOT a web app) that uses an LLM to monitor forex markets, place paper trades on an OANDA practice account, and send updates via Telegram. It must be deployable to Railway with zero rework."
 
-## Personas
-- **Solo trader / quant hobbyist** wants 24/7 AI-assisted paper trading via Telegram while glancing at a futuristic dashboard.
+## Non-negotiable rules
 
-## Static core requirements
-- Central glowing AI orb (idle/listening/thinking states).
-- Voice command palette (Web Speech API) + TTS replies.
-- Live updating panels (auto-refresh every 4-5s).
-- Telegram approve/skip flow for AI signals.
-- Manual buy/sell from dashboard.
-- Auto-trader toggle (90s loop).
-- Cyberpunk dark aesthetic — Chakra Petch + IBM Plex Mono, electric cyan/magenta/amber on deep navy.
+- Paper trading only. No live path. No MT4/MT5/Windows VPS/Cloudflare Tunnel.
+- OANDA practice environment only (`api-fxpractice.oanda.com`).
+- Telegram via long-polling (no webhooks).
+- All secrets from `os.environ`.
+- Guardrails run in deterministic Python, outside the LLM.
 
-## Implemented (2026-04-26)
-- Backend: `/api/chat`, `/api/tasks`, `/api/feed/{trading,twitter,calendar,news}`, `/api/bot/{status,positions,trades,signals,signal,signal/{id}/{approve,skip},trade,auto,reset}`.
-- Kimi K2.5 integration via Moonshot OpenAI-compatible API (`https://api.moonshot.ai/v1`). Strict mode returns None when no key → caller uses heuristic fallback.
-- Telegram polling + auto-trader loops scheduled in FastAPI startup.
-- Mongo collections: `messages`, `tasks`, `paper_account`, `paper_positions`, `paper_trades`, `signals`.
-- Frontend: 8 panels (BotPositions, Trading, Schedule, AI Signals, Bot Control, X Feed, News, plus Tasks via panel reuse), JarvisOrb (CSS/SVG), CommandPalette with mic, HUD top bar w/ status indicators, grain + scan-line overlays.
+## Architecture (v1)
 
-## Backlog / Next
-- **P0**: User to add real `MOONSHOT_API_KEY` and `TELEGRAM_BOT_TOKEN` to `backend/.env` and restart backend.
-- **P1**: Wire Binance testnet (real prices + paper orders) instead of random-walk mock.
-- **P1**: Persist subscribed Telegram chats to Mongo (currently in-memory, lost on restart).
-- **P2**: Risk controls (max position size, daily loss limit, kill switch).
-- **P2**: Equity curve chart + per-symbol P/L history.
-- **P2**: Drag-to-rearrange panels.
-- **P2**: Push Twitter/X real feed via X API v2.
+- Pure Python worker (no HTTP listener) — distinct from the JARVIS dashboard which lives in `/app/backend` + `/app/frontend` and stays on Emergent.
+- Single asyncio event loop hosts both `python-telegram-bot` (polling) and `APScheduler` (`AsyncIOScheduler`).
+- Slow LLM work dispatches via `asyncio.create_task` so the polling loop is never blocked.
+- Lazy daily-balance reset: starting NAV captured on first order of each new UTC day.
+- Three scheduled jobs: morning brief 08:00 UTC, alert scan via `SCHEDULE_CRON`, 60s health-check heartbeat.
 
-## Key files
-- `/app/backend/server.py` — FastAPI app, routes, Kimi calls.
-- `/app/backend/trading_engine.py` — paper trading + signal generation.
-- `/app/backend/telegram_bot.py` — Telegram polling + commands.
-- `/app/frontend/src/App.js` — main shell + voice + chat.
-- `/app/frontend/src/components/{JarvisOrb,Panel,CommandPalette}.jsx`.
-- `/app/frontend/src/components/panels/*.jsx`.
+## Tech stack
+
+Python 3.11, anthropic 0.97, oandapyV20 0.7.2, tavily-python, python-telegram-bot 21.7, APScheduler 3.10, structlog, python-dotenv, pytest.
+
+## Slash commands
+
+`/start`, `/brief`, `/positions`, `/balance`, `/kill on|off`, `/schedules`, `/jarvis [text]`. Allowlist enforced via `TELEGRAM_CHAT_ID`.
+
+## Guardrails (8 rules, all tested)
+
+1. Kill switch active → reject
+2. `TRADING_MODE != "paper"` → reject
+3. `OANDA_ENVIRONMENT != "practice"` → reject
+4. Already halted earlier this UTC day → reject
+5. `stop_loss is None` → reject
+6. `units <= 0` or `units > MAX_POSITION_UNITS` → reject
+7. Daily net loss ≥ `DAILY_LOSS_LIMIT_PCT` → halt rest of day, fire one Telegram alert
+8. \>5 orders in any 60s window → reject
+
+## Status
+
+**v1 complete (2026-04-26).** 10/10 tests passing. Boot smoke test passes against real Anthropic/OANDA/Telegram APIs.
+
+## What's implemented
+
+- `app/config.py`, `app/guardrails.py`, `app/agent.py` (Anthropic tool loop), `app/main.py` (APScheduler + Telegram + handlers + SIGTERM shutdown).
+- Tools: `oanda_tool.py` (locked to practice), `news_tool.py` (Tavily), `telegram_tool.py`. Stubs: `email_tool.py`, `calendar_tool.py`.
+- `Dockerfile`, `railway.json`, GitHub Actions test workflow, `.env.example`, `.gitignore`.
+- `README.md` with quickstart, Railway steps, env table, slash command reference, troubleshooting, going-live warning.
+
+## Backlog (P1)
+
+- User fills real `TAVILY_API_KEY` and `TELEGRAM_CHAT_ID` in Railway → Variables.
+- User stops or token-rotates the JARVIS Telegram bot (currently polling same token in `/app/backend`) before deploy. Two pollers on one token → 409 Conflict.
+- Push to GitHub, connect Railway, deploy.
+- Run 5-prompt verification demo from Telegram: `/start`, `/balance`, `/positions`, `/brief`, `/jarvis what's your read on EUR_USD?`.
+
+## Backlog (P2)
+
+- MongoDB v2 for persistent guardrail state (kill switch + daily halt survives redeploys).
+- Shared state with the Emergent JARVIS dashboard via the same Mongo.
+- Real RSS news scout (currently Tavily only).
+- Crypto exchanges (Binance/Bybit) integration.
+
+## Files
+
+```
+/app/forex-agent/
+├── app/
+│   ├── __init__.py
+│   ├── main.py
+│   ├── agent.py
+│   ├── config.py
+│   ├── guardrails.py
+│   ├── tools/
+│   │   ├── oanda_tool.py
+│   │   ├── news_tool.py
+│   │   ├── telegram_tool.py
+│   │   ├── email_tool.py        (stub)
+│   │   └── calendar_tool.py     (stub)
+│   └── prompts/system.md
+├── tests/test_guardrails.py     (10 passing)
+├── Dockerfile, railway.json, requirements.txt
+├── .env.example, .gitignore
+├── .github/workflows/test.yml
+└── README.md
+```

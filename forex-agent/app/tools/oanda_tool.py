@@ -53,10 +53,10 @@ class OandaTool:
                 f"OandaTool refuses environment={environment!r}; practice only"
             )
         self._client = API(access_token=api_token, environment="practice")
-        # Sanity-check we resolved to the practice host.
-        if PRACTICE_HOSTNAME not in self._client.api_url:
+        # Sanity-check we resolved to the practice environment.
+        if self._client.environment != "practice":
             raise RuntimeError(
-                f"OANDA client resolved to non-practice host: {self._client.api_url}"
+                f"OANDA client resolved to non-practice environment: {self._client.environment}"
             )
         self._account_id = account_id
         self._state = guardrail_state

@@ -185,6 +185,34 @@ class Agent:
             pass  # already logged inside sender; do not crash the tick
         return summary
 
+    async def chat(self, message: str) -> str:
+        """Free-form conversation with full tool access. Used by /jarvis.
+
+        Same loop as `run_tick` but driven by an arbitrary user message.
+        Returns the final summary; caller is responsible for sending it.
+        """
+        news_headlines: List[str] = []
+        tool_calls: List[Dict[str, Any]] = []
+        final_action: Dict[str, Any] = {"action": "chat", "reason": ""}
+
+        log.info("chat_start", message=message[:200])
+        summary = await self._loop(
+            message,
+            dry_run=False,
+            news_headlines=news_headlines,
+            tool_calls=tool_calls,
+            final_action=final_action,
+        )
+        log.info(
+            "chat_complete",
+            message=message[:200],
+            news_headlines=news_headlines,
+            tool_calls=tool_calls,
+            final_action=final_action,
+            summary=summary,
+        )
+        return summary
+
     async def _build_snapshot(self) -> Dict[str, Any]:
         snapshot: Dict[str, Any] = {"instruments": {}, "open_positions": []}
         for inst in self._config.instruments:
