@@ -1,0 +1,104 @@
+{
+  "theme": "DARK",
+  "archetype": "7 (Electric & Neon)",
+  "typography": {
+    "fonts": [
+      {
+        "family": "Chakra Petch",
+        "type": "heading",
+        "url": "https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&display=swap",
+        "fallback": "sans-serif"
+      },
+      {
+        "family": "IBM Plex Mono",
+        "type": "body",
+        "url": "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap",
+        "fallback": "monospace"
+      }
+    ],
+    "rules": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl tracking-tighter font-bold uppercase",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl tracking-tight font-semibold uppercase",
+      "h3": "text-xl sm:text-2xl font-medium",
+      "h4": "text-lg sm:text-xl font-medium",
+      "body": "text-base leading-relaxed font-normal",
+      "small": "text-xs tracking-[0.2em] uppercase"
+    }
+  },
+  "colors": {
+    "background": "#050B14",
+    "surface": "rgba(10, 17, 40, 0.6)",
+    "border": "rgba(0, 240, 255, 0.3)",
+    "primary": "#00F0FF",
+    "secondary": "#FF007F",
+    "accent_alert": "#FFB000",
+    "text_primary": "#FFFFFF",
+    "text_secondary": "#8BABC6",
+    "mac_red": "#FF5F56",
+    "mac_yellow": "#FFBD2E",
+    "mac_green": "#27C93F"
+  },
+  "layout": {
+    "grid_strategy": "Control Room layout with immersive 3D background. The UI is split into a left column (panels), a central area (AI Orb + chat input), and a right column (panels).",
+    "spacing": "Dense but legible. Use Tailwind scale: p-2, p-4 for internal widget padding.",
+    "border_radius": "rounded-lg or rounded-xl (subtle, not too pill-shaped to maintain cyberpunk edge).",
+    "panels": {
+      "style": "Glassmorphism (Crystal variant). `backdrop-blur-xl bg-[#0A1128]/60 border border-[#00F0FF]/30 shadow-[0_4px_30px_rgba(0,0,0,0.5)]`",
+      "header": "macOS traffic light dots (red, yellow, green) on the top left, small title on the top right or center.",
+      "hover": "Subtle border glow on hover: `hover:border-[#00F0FF]/60 hover:shadow-[0_0_20px_rgba(0,240,255,0.2)]`"
+    },
+    "z_layers": {
+      "background": 0,
+      "particles_grain": 10,
+      "orb": 20,
+      "panels": 30,
+      "overlays": 50
+    }
+  },
+  "components": {
+    "orb": {
+      "description": "Central glowing AI orb (Jarvis core). Made pure CSS/SVG. Pulse animation based on state (idle, listening, thinking).",
+      "styles": "Multiple concentric circles, drop-shadow, blur filters, rotating dashed SVG borders. Glow color should be primary (#00F0FF)."
+    },
+    "command_palette": {
+      "description": "Chat input at the bottom center. Glassmorphic, wide, with a microphone button.",
+      "styles": "backdrop-blur-xl bg-[#050B14]/80 border border-[#00F0FF]/50 rounded-full px-6 py-3 flex items-center gap-4"
+    },
+    "traffic_light_header": {
+      "description": "Header for each widget simulating a draggable OS window.",
+      "styles": "flex items-center gap-2 mb-4 border-b border-[#00F0FF]/20 pb-2"
+    }
+  },
+  "animations": {
+    "orb_pulse": "Keyframes scaling from 0.95 to 1.05 and fading box-shadow intensity.",
+    "panel_entrance": "Staggered fade-in and slight translate-y on load.",
+    "hover_glow": "transition-all duration-300 ease-out"
+  },
+  "assets": {
+    "images": {
+      "background": "https://images.pexels.com/photos/14976666/pexels-photo-14976666.jpeg",
+      "avatars": [
+        "https://images.unsplash.com/photo-1627890458144-4c0c481bf4b8?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NjV8MHwxfHNlYXJjaHwxfHxwcm9maWxlJTIwYXZhdGFyJTIwcG9ydHJhaXQlMjBkYXJrJTIwYmFja2dyb3VuZHxlbnwwfHx8fDE3NzcxNzA0OTB8MA&ixlib=rb-4.1.0&q=85",
+        "https://images.pexels.com/photos/13185150/pexels-photo-13185150.jpeg"
+      ]
+    },
+    "icons": {
+      "library": "lucide-react",
+      "usage": "Use for widget icons, command palette actions, window controls."
+    },
+    "textures": {
+      "grain": "SVG noise filter applied to a fixed full-screen pseudo-element with opacity 0.05 - 0.1 and mix-blend-mode: overlay."
+    }
+  },
+  "instructions_to_main_agent": [
+    "Build a single-page immersive AI dashboard.",
+    "Set the background image to cover the full viewport, overlaid with a very dark gradient (`bg-gradient-to-b from-[#050B14]/80 to-[#050B14]/95`) and a subtle grain texture to darken the image and create depth.",
+    "Use Chakra Petch for all headings and widget titles, IBM Plex Mono for data, code, and chat text.",
+    "Create 5-6 distinct draggable/floating style panels: Trading (mock charts/tickers), Twitter/X Feed, Calendar, Task Runner, Social Media.",
+    "Implement the central AI Orb using HTML/CSS/SVG (no WebGL required). Give it a 'listening'/'speaking' pulse animation.",
+    "Ensure all panels have the macOS traffic light buttons (red, yellow, green) in their headers.",
+    "Include a prominent voice-input enabled command palette at the bottom.",
+    "Use the colors specified (electric cyan, magenta, amber) strictly. Do not use generic tailwind blues/purples.",
+    "Add 'data-testid' to all interactive elements."
+  ]
+}
