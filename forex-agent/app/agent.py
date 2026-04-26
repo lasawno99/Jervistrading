@@ -26,7 +26,7 @@ log = structlog.get_logger()
 
 SYSTEM_PROMPT = (Path(__file__).parent / "prompts" / "system.md").read_text()
 
-MAX_TOOL_ITERATIONS = 6
+MAX_TOOL_ITERATIONS = 10
 
 
 def _tool_specs() -> List[Dict[str, Any]]:
@@ -139,9 +139,19 @@ class Agent:
         """Run one decision cycle across all configured instruments.
 
         Returns a one-line summary that has also been sent to Telegram.
+        Telegram is sent on every tick — including no_trade and errors.
         """
         start = time.time()
+        instruments_processed: List[str] = []
+        news_headlines: List[str] = []
+        tool_calls: List[Dict[str, Any]] = []
+        final_action: Dict[str, Any] = {"action": "unknown", "reason": ""}
+
+        log.info("tick_start", instruments=self._config.instruments, dry_run=dry_run)
+
         snapshot = await self._build_snapshot()
+        instruments_processed = list(snapshot.get("instruments", {}).keys())
+
         user_msg = (
             "Current market snapshot:\n"
             f"{json.dumps(snapshot, indent=2)}\n\n"
@@ -151,11 +161,22 @@ class Agent:
             + "When done, end with a one-line summary."
         )
 
-        summary = await self._loop(user_msg, dry_run=dry_run)
+        summary = await self._loop(
+            user_msg,
+            dry_run=dry_run,
+            news_headlines=news_headlines,
+            tool_calls=tool_calls,
+            final_action=final_action,
+        )
+
         log.info(
             "tick_complete",
             duration_s=round(time.time() - start, 2),
             dry_run=dry_run,
+            instruments_processed=instruments_processed,
+            news_headlines=news_headlines,
+            tool_calls=tool_calls,
+            final_action=final_action,
             summary=summary,
         )
         try:
@@ -169,12 +190,12 @@ class Agent:
         for inst in self._config.instruments:
             try:
                 candles = await asyncio.to_thread(
-                    self._oanda.get_candles, inst, "M15", 30
+                    self._oanda.get_candles, inst, "M15", 50
                 )
                 price = await asyncio.to_thread(self._oanda.get_price, inst)
                 snapshot["instruments"][inst] = {
                     "price": price,
-                    "candles_tail": candles[-5:],
+                    "candles": candles,
                 }
             except Exception as e:
                 log.error("snapshot_failed", instrument=inst, error=str(e))
@@ -188,7 +209,15 @@ class Agent:
             snapshot["open_positions"] = []
         return snapshot
 
-    async def _loop(self, user_msg: str, *, dry_run: bool) -> str:
+    async def _loop(
+        self,
+        user_msg: str,
+        *,
+        dry_run: bool,
+        news_headlines: List[str],
+        tool_calls: List[Dict[str, Any]],
+        final_action: Dict[str, Any],
+    ) -> str:
         messages: List[Dict[str, Any]] = [{"role": "user", "content": user_msg}]
         tools = _tool_specs()
         last_summary = "No summary produced."
@@ -209,12 +238,35 @@ class Agent:
 
             tool_uses = [b for b in response.content if b.type == "tool_use"]
             if not tool_uses or response.stop_reason == "end_turn":
+                if final_action["action"] == "unknown":
+                    final_action["action"] = "no_trade"
+                    final_action["reason"] = last_summary
                 return last_summary or "No summary produced."
 
             messages.append({"role": "assistant", "content": response.content})
             tool_results = []
             for tu in tool_uses:
-                result = await self._dispatch(tu.name, tu.input or {}, dry_run=dry_run)
+                args = tu.input or {}
+                tool_calls.append({"name": tu.name, "args": args})
+                result = await self._dispatch(tu.name, args, dry_run=dry_run)
+
+                if tu.name == "news_search" and isinstance(result, dict):
+                    for r in result.get("results", []) or []:
+                        title = r.get("title")
+                        if title:
+                            news_headlines.append(title)
+                if tu.name == "place_paper_order":
+                    final_action["action"] = "place_paper_order"
+                    final_action["reason"] = args.get("rationale", "")
+                    final_action["details"] = {
+                        k: args.get(k)
+                        for k in ("instrument", "side", "units", "stop_loss", "take_profit")
+                    }
+                    final_action["result"] = result
+                elif tu.name == "no_trade":
+                    final_action["action"] = "no_trade"
+                    final_action["reason"] = args.get("reason", "")
+
                 tool_results.append(
                     {
                         "type": "tool_result",
@@ -224,6 +276,9 @@ class Agent:
                 )
             messages.append({"role": "user", "content": tool_results})
 
+        if final_action["action"] == "unknown":
+            final_action["action"] = "loop_exhausted"
+            final_action["reason"] = last_summary
         return last_summary or "Tool loop exhausted without summary."
 
     async def _dispatch(

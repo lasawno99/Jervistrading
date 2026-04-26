@@ -1,5 +1,4 @@
 anthropic==0.39.0
-langgraph==0.2.59
 oandapyV20==0.7.2
 tavily-python==0.5.0
 python-telegram-bot==21.7
