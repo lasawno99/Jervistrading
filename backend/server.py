@@ -394,8 +394,24 @@ async def bot_reset():
     await db.paper_positions.delete_many({})
     await db.paper_trades.delete_many({})
     await db.signals.delete_many({})
+    await db.equity_curve.delete_many({})
     await te.ensure_account(db)
     return {"ok": True}
+
+
+@api_router.get("/bot/risk")
+async def bot_get_risk():
+    return await te.get_risk(db)
+
+
+@api_router.post("/bot/risk")
+async def bot_update_risk(payload: dict):
+    return await te.update_risk(db, payload)
+
+
+@api_router.get("/bot/equity-curve")
+async def bot_equity_curve(limit: int = 200):
+    return await te.get_equity_curve(db, limit)
 
 
 # ================= APP WIRING =================
@@ -423,6 +439,8 @@ _bg_tasks: list = []
 @app.on_event("startup")
 async def on_startup():
     await te.ensure_account(db)
+    await te.get_risk(db)  # ensure risk doc exists
+    await tg.load_subscribers(db)
     # Start telegram bot polling if configured
     if tg.is_configured():
         _bg_tasks.append(asyncio.create_task(tg.polling_loop(db, call_kimi_strict)))
@@ -431,6 +449,19 @@ async def on_startup():
         logger.info("TELEGRAM_BOT_TOKEN not set; polling disabled.")
     # Auto-trader loop always runs (will no-op when auto_mode off / no chats)
     _bg_tasks.append(asyncio.create_task(tg.auto_trader_loop(db, call_kimi_strict, interval_sec=90)))
+    # Equity snapshot loop — every 30s
+    _bg_tasks.append(asyncio.create_task(_equity_snapshot_loop()))
+
+
+async def _equity_snapshot_loop():
+    while True:
+        try:
+            await asyncio.sleep(30)
+            await te.snapshot_equity(db)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.warning(f"equity snapshot error: {e}")
 
 
 @app.on_event("shutdown")

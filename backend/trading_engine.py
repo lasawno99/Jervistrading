@@ -69,6 +69,81 @@ async def get_positions(db) -> List[dict]:
     return await db.paper_positions.find({}, {"_id": 0}).to_list(100)
 
 
+# ---------------- Risk controls ----------------
+
+DEFAULT_RISK = {
+    "_id": "risk",
+    "max_position_notional": 25000.0,
+    "max_daily_loss": 5000.0,
+    "kill_switch": False,
+}
+
+
+async def get_risk(db) -> dict:
+    r = await db.settings.find_one({"_id": "risk"})
+    if r:
+        r.pop("_id", None)
+        return {**{k: v for k, v in DEFAULT_RISK.items() if k != "_id"}, **r}
+    await db.settings.insert_one(dict(DEFAULT_RISK))
+    return {k: v for k, v in DEFAULT_RISK.items() if k != "_id"}
+
+
+async def update_risk(db, payload: dict) -> dict:
+    allowed = {"max_position_notional", "max_daily_loss", "kill_switch"}
+    update = {k: v for k, v in payload.items() if k in allowed}
+    if not update:
+        return await get_risk(db)
+    await db.settings.update_one({"_id": "risk"}, {"$set": update}, upsert=True)
+    return await get_risk(db)
+
+
+async def _today_realized_loss(db) -> float:
+    """Best-effort: sum of (sell proceeds - matching cost basis) for trades today.
+    Simpler proxy: today's equity drawdown vs starting cash today.
+    We use: starting_cash - current_equity if negative trades dominate.
+    """
+    eq = await compute_equity(db)
+    return max(0.0, -eq["total_pl"])  # treat any negative P/L as loss for kill-switch check
+
+
+async def check_risk(db, symbol: str, side: str, qty: float, price: float) -> Optional[str]:
+    """Return None if OK, else error string."""
+    risk = await get_risk(db)
+    if risk["kill_switch"]:
+        return "kill switch is engaged. all new trading halted."
+    if side == "buy":
+        # max position notional after this trade
+        pos = await db.paper_positions.find_one({"symbol": symbol})
+        post_qty = (pos["qty"] if pos else 0) + qty
+        post_notional = post_qty * price
+        if post_notional > risk["max_position_notional"]:
+            return f"would exceed max position notional ${risk['max_position_notional']:,.0f} ({symbol} would be ${post_notional:,.2f})"
+    # daily loss kill
+    loss = await _today_realized_loss(db)
+    if loss > risk["max_daily_loss"]:
+        return f"daily loss cap hit (${loss:,.2f} > ${risk['max_daily_loss']:,.0f}). new orders blocked."
+    return None
+
+
+# ---------------- Equity curve ----------------
+
+async def snapshot_equity(db) -> dict:
+    eq = await compute_equity(db)
+    point = {
+        "ts": now_iso(),
+        "equity": eq["equity"],
+        "cash": eq["cash"],
+        "pl": eq["total_pl"],
+    }
+    await db.equity_curve.insert_one(dict(point))
+    return point
+
+
+async def get_equity_curve(db, limit: int = 200) -> List[dict]:
+    docs = await db.equity_curve.find({}, {"_id": 0}).sort("ts", -1).to_list(limit)
+    return list(reversed(docs))
+
+
 async def compute_equity(db) -> dict:
     acc = await ensure_account(db)
     positions = await get_positions(db)
@@ -103,6 +178,10 @@ async def execute_trade(db, symbol: str, side: str, qty: float, price: Optional[
         return {"ok": False, "error": "qty must be > 0"}
 
     px = price or current_price(symbol)
+    # Risk check
+    err = await check_risk(db, symbol, side, qty, px)
+    if err:
+        return {"ok": False, "error": err}
     acc = await ensure_account(db)
     cost = px * qty
 

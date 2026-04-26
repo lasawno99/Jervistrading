@@ -52,6 +52,25 @@ def set_auto(on: bool) -> bool:
     return _state["auto_mode"]
 
 
+async def load_subscribers(db) -> None:
+    """Load persisted chat subscribers from Mongo into in-memory set."""
+    docs = await db.tg_subscribers.find({}, {"_id": 0, "chat_id": 1}).to_list(1000)
+    for d in docs:
+        _state["subscribed_chats"].add(d["chat_id"])
+    logger.info(f"Loaded {len(_state['subscribed_chats'])} telegram subscribers")
+
+
+async def _add_subscriber(db, chat_id: int) -> None:
+    if chat_id in _state["subscribed_chats"]:
+        return
+    _state["subscribed_chats"].add(chat_id)
+    await db.tg_subscribers.update_one(
+        {"chat_id": chat_id},
+        {"$set": {"chat_id": chat_id, "ts": datetime.now(timezone.utc).isoformat()}},
+        upsert=True,
+    )
+
+
 async def _api(client: httpx.AsyncClient, method: str, **params) -> dict:
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     url = f"https://api.telegram.org/bot{token}/{method}"
@@ -98,7 +117,7 @@ async def _handle_command(client, db, chat_id: int, text: str, kimi_call):
     cmd = parts[0].lower().split("@")[0]
 
     if cmd == "/start":
-        _state["subscribed_chats"].add(chat_id)
+        await _add_subscriber(db, chat_id)
         await _send_message(client, chat_id, (
             "🤖 <b>JARVIS Trading Bot online</b>\n"
             "Powered by Kimi K2.5 · paper trading mode\n\n"
@@ -223,7 +242,7 @@ async def polling_loop(db, kimi_call):
                         if text.startswith("/"):
                             await _handle_command(client, db, chat_id, text, kimi_call)
                         else:
-                            _state["subscribed_chats"].add(chat_id)
+                            await _add_subscriber(db, chat_id)
                             await _send_message(client, chat_id, "<i>tip: use /help</i>")
                     elif "callback_query" in upd:
                         await _handle_callback(client, db, upd["callback_query"])
