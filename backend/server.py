@@ -138,8 +138,8 @@ async def call_kimi(message: str) -> str:
                         {"role": "system", "content": SYSTEM_PROMPT},
                         {"role": "user", "content": message},
                     ],
-                    temperature=0.6,
-                    max_tokens=300,
+                    temperature=1,
+                    max_tokens=2048,
                 )
 
             resp = await loop.run_in_executor(None, _call)
@@ -164,8 +164,8 @@ async def call_kimi_strict(message: str) -> Optional[str]:
                     {"role": "system", "content": "You are a concise quant trading agent. One sentence, no markdown."},
                     {"role": "user", "content": message},
                 ],
-                temperature=0.6,
-                max_tokens=120,
+                temperature=1,
+                max_tokens=1024,
             )
 
         resp = await loop.run_in_executor(None, _call)
