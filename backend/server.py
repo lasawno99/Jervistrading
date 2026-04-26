@@ -39,6 +39,7 @@ import telegram_bot as tg
 import forex_agent as fx
 import oanda_client as oa
 import jarvis_agent as jv
+import fx_strategies as fxs
 from scheduler import scheduler_loop
 
 app = FastAPI(title="Jarvis Command Center API")
@@ -568,6 +569,63 @@ async def cli_jarvis_install():
     return PlainTextResponse(content, media_type="text/x-python")
 
 
+# ================= FX STRATEGIES =================
+
+class BacktestRequest(BaseModel):
+    strategy: Literal["SMA", "Bollinger", "Contrarian", "Momentum", "ML_Classification"]
+    instrument: str
+    start: str
+    end: str
+    granularity: str = "H1"
+    params: Optional[dict] = None
+    trading_cost: float = 0
+    source: str = "auto"
+
+
+class StrategyStartRequest(BaseModel):
+    kind: Literal["SMA", "Bollinger", "Contrarian", "Momentum"]
+    instrument: str
+    params: dict
+    units: int = 1000
+    poll_sec: int = 30
+
+
+@api_router.post("/strategies/backtest")
+async def strategies_backtest(req: BacktestRequest):
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(
+        None,
+        lambda: jv._tool_backtest(
+            strategy=req.strategy, instrument=req.instrument, start=req.start, end=req.end,
+            granularity=req.granularity, params=req.params or {}, trading_cost=req.trading_cost, source=req.source,
+        ),
+    )
+
+
+@api_router.post("/strategies/start")
+async def strategies_start(req: StrategyStartRequest):
+    risk = await te.get_risk(db)
+    if risk.get("kill_switch"):
+        raise HTTPException(status_code=403, detail="kill switch engaged")
+    return await fxs.start_strategy(db, kind=req.kind, instrument=req.instrument,
+                                     params=req.params, units=req.units, poll_sec=req.poll_sec)
+
+
+@api_router.post("/strategies/{sid}/stop")
+async def strategies_stop(sid: str):
+    return await fxs.stop_strategy(db, sid)
+
+
+@api_router.get("/strategies")
+async def strategies_list():
+    return {"strategies": await fxs.list_strategies(db)}
+
+
+@api_router.get("/strategies/events")
+async def strategies_events(strategy_id: Optional[str] = None, limit: int = 50):
+    return {"events": await fxs.list_strategy_events(db, strategy_id, limit)}
+
+
 # ================= APP WIRING =================
 
 app.include_router(api_router)
@@ -607,6 +665,13 @@ async def on_startup():
     _bg_tasks.append(asyncio.create_task(_equity_snapshot_loop()))
     # JARVIS scheduler loop — every 30s
     _bg_tasks.append(asyncio.create_task(scheduler_loop(db, jv.chat, broadcast_fn=tg.broadcast_text, interval_sec=30)))
+    # Auto-resume any live FX strategies that were running before restart
+    try:
+        n = await fxs.resume_active_strategies(db)
+        if n:
+            logger.info(f"Resumed {n} live FX strategies")
+    except Exception as e:
+        logger.warning(f"strategy resume error: {e}")
 
 
 async def _equity_snapshot_loop():

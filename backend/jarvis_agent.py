@@ -30,6 +30,7 @@ except Exception:
 
 import oanda_client as oa
 import trading_engine as te
+import fx_strategies as fxs
 
 logger = logging.getLogger("jarvis")
 
@@ -288,6 +289,62 @@ TOOLS = [
         "description": "Recall stored preferences and facts (returns key/value map).",
         "input_schema": {"type": "object", "properties": {}},
     },
+
+    # ---- FX Strategies (backtests + live) ----
+    {
+        "name": "backtest_strategy",
+        "description": "Run a vectorized FX strategy backtest. Strategy types: SMA (params: smas, smal), Bollinger (sma, deviation), Contrarian (window), Momentum (window), ML_Classification (lags, train_split). Returns return %, outperformance vs buy&hold, sharpe, win rate.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "strategy": {"type": "string", "enum": ["SMA", "Bollinger", "Contrarian", "Momentum", "ML_Classification"]},
+                "instrument": {"type": "string", "description": "e.g. EUR_USD, XAU_USD"},
+                "start": {"type": "string", "description": "ISO date e.g. 2024-01-01"},
+                "end": {"type": "string", "description": "ISO date e.g. 2024-12-31"},
+                "granularity": {"type": "string", "enum": ["M5", "M15", "M30", "H1", "H4", "D"], "default": "H1"},
+                "params": {"type": "object", "description": "Strategy-specific params, e.g. {smas:20,smal:50}"},
+                "trading_cost": {"type": "number", "default": 0},
+                "source": {"type": "string", "enum": ["auto", "synthetic", "oanda"], "default": "auto"},
+            },
+            "required": ["strategy", "instrument", "start", "end"],
+        },
+    },
+    {
+        "name": "strategy_start",
+        "description": "Start a LIVE FX strategy that polls price every N seconds and places real orders. Subject to risk gate. Use this for SMA, Bollinger, Contrarian, or Momentum (not ML).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "kind": {"type": "string", "enum": ["SMA", "Bollinger", "Contrarian", "Momentum"]},
+                "instrument": {"type": "string"},
+                "params": {"type": "object"},
+                "units": {"type": "integer", "default": 1000},
+                "poll_sec": {"type": "integer", "default": 30, "description": "How often to evaluate (seconds)"},
+            },
+            "required": ["kind", "instrument", "params"],
+        },
+    },
+    {
+        "name": "strategy_stop",
+        "description": "Stop a running live strategy by id.",
+        "input_schema": {"type": "object", "properties": {"strategy_id": {"type": "string"}}, "required": ["strategy_id"]},
+    },
+    {
+        "name": "strategy_list",
+        "description": "List all live strategies (running + stopped).",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "strategy_events",
+        "description": "Get recent execution events from a live strategy (signals fired, orders placed).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "strategy_id": {"type": "string"},
+                "limit": {"type": "integer", "default": 20},
+            },
+        },
+    },
 ]
 
 
@@ -453,12 +510,39 @@ async def _tool_memory_recall(db) -> dict:
     return {"memory": {d["key"]: d["value"] for d in docs}}
 
 
+# ---- FX strategy tool implementations ----
+
+def _tool_backtest(strategy: str, instrument: str, start: str, end: str,
+                   granularity: str = "H1", params: dict = None, trading_cost: float = 0,
+                   source: str = "auto") -> dict:
+    params = params or {}
+    if strategy == "SMA":
+        return fxs.backtest_sma(instrument, start, end, smas=params.get("smas", 20), smal=params.get("smal", 50),
+                                granularity=granularity, trading_cost=trading_cost, source=source)
+    if strategy == "Bollinger":
+        return fxs.backtest_bollinger(instrument, start, end, sma=params.get("sma", 20),
+                                       deviation=params.get("deviation", 2), granularity=granularity,
+                                       trading_cost=trading_cost, source=source)
+    if strategy == "Contrarian":
+        return fxs.backtest_contrarian(instrument, start, end, window=params.get("window", 3),
+                                        granularity=granularity, trading_cost=trading_cost, source=source)
+    if strategy == "Momentum":
+        return fxs.backtest_momentum(instrument, start, end, window=params.get("window", 3),
+                                      granularity=granularity, trading_cost=trading_cost, source=source)
+    if strategy == "ML_Classification":
+        return fxs.backtest_ml_classification(instrument, start, end, lags=params.get("lags", 5),
+                                               granularity=granularity, trading_cost=trading_cost,
+                                               train_split=params.get("train_split", 0.7), source=source)
+    return {"error": f"unknown strategy {strategy}"}
+
+
 # ---------------- Tool dispatcher ----------------
 
 async def _dispatch_tool(db, tool_name: str, tool_input: dict, block_trades: bool) -> str:
     if block_trades and tool_name in (
         "paper_trade", "paper_generate_signal",
         "forex_market_order", "forex_close",
+        "strategy_start",
     ):
         return json.dumps({"error": "kill switch is engaged. all trading halted."})
     try:
@@ -510,6 +594,18 @@ async def _dispatch_tool(db, tool_name: str, tool_input: dict, block_trades: boo
             res = await _tool_memory_save(db, **tool_input)
         elif tool_name == "memory_recall":
             res = await _tool_memory_recall(db)
+        elif tool_name == "backtest_strategy":
+            # blocking math; offload to executor
+            loop = asyncio.get_event_loop()
+            res = await loop.run_in_executor(None, lambda: _tool_backtest(**tool_input))
+        elif tool_name == "strategy_start":
+            res = await fxs.start_strategy(db, **tool_input)
+        elif tool_name == "strategy_stop":
+            res = await fxs.stop_strategy(db, **tool_input)
+        elif tool_name == "strategy_list":
+            res = {"strategies": await fxs.list_strategies(db)}
+        elif tool_name == "strategy_events":
+            res = {"events": await fxs.list_strategy_events(db, **tool_input)}
         else:
             res = {"error": f"unknown tool {tool_name}"}
         return json.dumps(res, default=str)
