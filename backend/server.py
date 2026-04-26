@@ -556,6 +556,18 @@ async def jarvis_memory_delete(key: str):
     return {"ok": True}
 
 
+@api_router.get("/cli/jarvis")
+async def cli_jarvis_install():
+    """Serve the CLI script as plain text so users can `curl ... -o jarvis`."""
+    from fastapi.responses import PlainTextResponse
+    cli_path = Path(__file__).parent / "cli" / "jarvis.py"
+    try:
+        content = cli_path.read_text()
+    except Exception as e:
+        return PlainTextResponse(f"# error reading CLI: {e}", status_code=500)
+    return PlainTextResponse(content, media_type="text/x-python")
+
+
 # ================= APP WIRING =================
 
 app.include_router(api_router)
