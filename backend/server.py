@@ -38,6 +38,8 @@ import trading_engine as te
 import telegram_bot as tg
 import forex_agent as fx
 import oanda_client as oa
+import jarvis_agent as jv
+from scheduler import scheduler_loop
 
 app = FastAPI(title="Jarvis Command Center API")
 api_router = APIRouter(prefix="/api")
@@ -472,6 +474,88 @@ async def forex_chat_clear(session_id: str):
     return {"ok": True}
 
 
+# ================= JARVIS UNIFIED ASSISTANT =================
+
+class JarvisChatRequest(BaseModel):
+    message: str
+    session_id: Optional[str] = None
+    user_name: Optional[str] = "Operator"
+
+
+@api_router.get("/jarvis/status")
+async def jarvis_status():
+    return jv.status()
+
+
+@api_router.post("/jarvis/chat")
+async def jarvis_chat(req: JarvisChatRequest):
+    session_id = req.session_id or "dashboard-default"
+    doc = await db.jarvis_sessions.find_one({"session_id": session_id}, {"_id": 0})
+    history = doc.get("history", []) if doc else []
+    reply, new_history = await jv.chat(db, history, req.message, user_name=req.user_name or "Operator")
+    await db.jarvis_sessions.update_one(
+        {"session_id": session_id},
+        {"$set": {"session_id": session_id, "history": new_history, "updated_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True,
+    )
+    return {"session_id": session_id, "reply": reply}
+
+
+@api_router.delete("/jarvis/chat/{session_id}")
+async def jarvis_chat_clear(session_id: str):
+    await db.jarvis_sessions.delete_one({"session_id": session_id})
+    return {"ok": True}
+
+
+@api_router.get("/jarvis/schedules")
+async def jarvis_schedules():
+    docs = await db.schedules.find({"status": "active"}, {"_id": 0}).sort("next_run", 1).to_list(200)
+    return {"schedules": docs}
+
+
+@api_router.delete("/jarvis/schedules/{sid}")
+async def jarvis_schedule_cancel(sid: str):
+    r = await db.schedules.update_one({"id": sid}, {"$set": {"status": "cancelled"}})
+    return {"ok": r.modified_count > 0}
+
+
+@api_router.get("/jarvis/todos")
+async def jarvis_todos(include_done: bool = False):
+    q = {} if include_done else {"done": False}
+    docs = await db.todos.find(q, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return {"todos": docs}
+
+
+@api_router.post("/jarvis/todos/{tid}/complete")
+async def jarvis_todo_complete(tid: str):
+    r = await db.todos.update_one({"id": tid}, {"$set": {"done": True, "completed_at": datetime.now(timezone.utc).isoformat()}})
+    return {"ok": r.modified_count > 0}
+
+
+@api_router.get("/jarvis/notifications")
+async def jarvis_notifications(limit: int = 25):
+    docs = await db.notifications.find({}, {"_id": 0}).sort("ts", -1).to_list(limit)
+    return {"notifications": docs}
+
+
+@api_router.post("/jarvis/notifications/read")
+async def jarvis_notifications_read():
+    await db.notifications.update_many({"read": False}, {"$set": {"read": True}})
+    return {"ok": True}
+
+
+@api_router.get("/jarvis/memory")
+async def jarvis_memory():
+    docs = await db.jarvis_memory.find({}, {"_id": 0}).to_list(200)
+    return {"memory": {d["key"]: d["value"] for d in docs}}
+
+
+@api_router.delete("/jarvis/memory/{key}")
+async def jarvis_memory_delete(key: str):
+    await db.jarvis_memory.delete_one({"key": key})
+    return {"ok": True}
+
+
 # ================= APP WIRING =================
 
 app.include_router(api_router)
@@ -509,6 +593,8 @@ async def on_startup():
     _bg_tasks.append(asyncio.create_task(tg.auto_trader_loop(db, call_kimi_strict, interval_sec=90)))
     # Equity snapshot loop — every 30s
     _bg_tasks.append(asyncio.create_task(_equity_snapshot_loop()))
+    # JARVIS scheduler loop — every 30s
+    _bg_tasks.append(asyncio.create_task(scheduler_loop(db, jv.chat, broadcast_fn=tg.broadcast_text, interval_sec=30)))
 
 
 async def _equity_snapshot_loop():

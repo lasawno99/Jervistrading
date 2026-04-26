@@ -114,6 +114,15 @@ async def broadcast_signal(db, signal: dict):
             await _send_message(client, chat_id, text, keyboard)
 
 
+async def broadcast_text(text: str):
+    """Send a plain text message to all subscribed chats. Used by scheduler."""
+    if not is_configured() or not _state["subscribed_chats"]:
+        return
+    async with httpx.AsyncClient() as client:
+        for chat_id in list(_state["subscribed_chats"]):
+            await _send_message(client, chat_id, text)
+
+
 async def _handle_command(client, db, chat_id: int, text: str, kimi_call):
     parts = text.strip().split()
     cmd = parts[0].lower().split("@")[0]
@@ -132,6 +141,8 @@ async def _handle_command(client, db, chat_id: int, text: str, kimi_call):
             "/trades · last 10 trades\n"
             "/forex &lt;msg&gt; · talk to Claude forex agent (OANDA)\n"
             "/forex_clear · reset forex chat history\n"
+            "/jarvis &lt;anything&gt; · unified JARVIS assistant (or /j)\n"
+            "/jarvis_clear · reset jarvis memory\n"
             "/help · this menu"
         ))
     elif cmd == "/help":
@@ -227,6 +238,42 @@ async def _handle_command(client, db, chat_id: int, text: str, kimi_call):
     elif cmd == "/forex_clear":
         await db.forex_sessions.delete_one({"session_id": f"tg_{chat_id}"})
         await _send_message(client, chat_id, "↺ forex chat history cleared.")
+    elif cmd in ("/jarvis", "/j"):
+        msg = text.split(maxsplit=1)
+        msg = msg[1] if len(msg) > 1 else ""
+        if not msg:
+            await _send_message(client, chat_id, (
+                "<b>JARVIS · UNIFIED ASSISTANT</b>\n"
+                "usage: <code>/jarvis &lt;anything&gt;</code>\n\n"
+                "examples:\n"
+                "• <code>/jarvis what's my day look like?</code>\n"
+                "• <code>/jarvis buy 0.05 BTC and remind me to check at 4pm</code>\n"
+                "• <code>/jarvis schedule a daily morning brief at 9am UTC</code>\n"
+                "• <code>/jarvis remember my risk tolerance is moderate</code>\n"
+                "• <code>/jarvis search latest fed news</code>\n\n"
+                "/jarvis_clear — reset chat memory"
+            ))
+            return
+        import jarvis_agent as _jv
+        if not _jv.is_configured():
+            await _send_message(client, chat_id, "⚠ <i>JARVIS offline — add ANTHROPIC_API_KEY to backend/.env.</i>")
+            return
+        sess_key = f"tg_jv_{chat_id}"
+        doc = await db.jarvis_sessions.find_one({"session_id": sess_key}, {"_id": 0})
+        history = doc.get("history", []) if doc else []
+        await _send_message(client, chat_id, "🧠 <i>jarvis processing…</i>")
+        reply, new_history = await _jv.chat(db, history, msg)
+        await db.jarvis_sessions.update_one(
+            {"session_id": sess_key},
+            {"$set": {"session_id": sess_key, "history": new_history, "updated_at": datetime.now(timezone.utc).isoformat()}},
+            upsert=True,
+        )
+        chunks = [reply[i:i+3800] for i in range(0, len(reply), 3800)] or ["(empty)"]
+        for ch in chunks:
+            await _send_message(client, chat_id, f"<b>🤖 jarvis ▸</b>\n{ch}")
+    elif cmd == "/jarvis_clear":
+        await db.jarvis_sessions.delete_one({"session_id": f"tg_jv_{chat_id}"})
+        await _send_message(client, chat_id, "↺ jarvis memory for this chat cleared.")
     else:
         await _send_message(client, chat_id, "unknown command. /help")
 

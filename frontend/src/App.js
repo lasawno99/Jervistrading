@@ -15,6 +15,7 @@ import BotControlPanel from "@/components/panels/BotControlPanel";
 import EquityCurvePanel from "@/components/panels/EquityCurvePanel";
 import RiskPanel from "@/components/panels/RiskPanel";
 import ForexDeskPanel from "@/components/panels/ForexDeskPanel";
+import JarvisInboxPanel from "@/components/panels/JarvisInboxPanel";
 import { Activity, Cpu, Radio, Wifi } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -80,7 +81,7 @@ function App() {
   const [orbState, setOrbState] = useState("idle");
   const [busy, setBusy] = useState(false);
   const [sessionId, setSessionId] = useState(null);
-  const [lastReply, setLastReply] = useState("Standing by. Issue a command or fire up auto-trader.");
+  const [lastReply, setLastReply] = useState("Standing by. Issue a command via voice, text, or Telegram.");
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const [serviceInfo, setServiceInfo] = useState(null);
@@ -97,10 +98,11 @@ function App() {
       setBusy(true);
       setOrbState("thinking");
       try {
-        const r = await axios.post(`${API}/chat`, { message: text, session_id: sessionId });
+        // Try unified JARVIS first
+        const r = await axios.post(`${API}/jarvis/chat`, { message: text, session_id: sessionId || "dashboard-default" });
         setSessionId(r.data.session_id);
         setLastReply(r.data.reply);
-        toast(`${r.data.intent.toUpperCase()} · task spawned`, { description: r.data.reply });
+        toast("JARVIS · responded", { description: r.data.reply.slice(0, 140) });
         if (voiceEnabled) speak(r.data.reply);
         bumpRefresh();
       } catch (e) {
@@ -204,13 +206,16 @@ function App() {
               <JarvisOrb state={orbState} />
               <div className="mt-20 max-w-xl text-center px-4 panel-in" style={{ animationDelay: "200ms" }}>
                 <div className="text-[10px] tracking-[0.4em] uppercase text-[#8BABC6] mb-2">// last response</div>
-                <div className="font-mono text-sm md:text-base text-white leading-relaxed" data-testid="last-reply">
+                <div className="font-mono text-sm md:text-base text-white leading-relaxed whitespace-pre-wrap" data-testid="last-reply">
                   {lastReply}<span className="caret text-[#00F0FF]"> ▌</span>
                 </div>
               </div>
             </div>
             <div className="mt-8 w-full">
-              <BotSignalsPanel delay={300} onChange={bumpRefresh} />
+              <JarvisInboxPanel delay={250} refreshKey={refreshKey} />
+            </div>
+            <div className="mt-4 w-full">
+              <BotSignalsPanel delay={350} onChange={bumpRefresh} />
             </div>
           </div>
 
@@ -241,7 +246,7 @@ function App() {
               tts {voiceEnabled ? "on" : "off"}
             </button>
             <span className="text-[10px] tracking-[0.3em] uppercase text-[#8BABC6]">
-              try: "buy 0.1 btc", "what's tsla doing", "schedule sync friday"
+              try: "what's my day", "buy 0.05 btc", "remind me at 4pm", "morning brief at 9am daily"
             </span>
           </div>
           <CommandPalette
