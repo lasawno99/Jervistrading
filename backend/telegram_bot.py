@@ -15,7 +15,9 @@ from typing import Optional, List
 from trading_engine import (
     compute_equity, execute_trade, list_trades, list_signals,
     execute_signal, skip_signal, current_price, UNIVERSE, tick_prices,
+    get_risk,
 )
+import forex_agent as fx
 
 logger = logging.getLogger("telegram")
 
@@ -128,6 +130,8 @@ async def _handle_command(client, db, chat_id: int, text: str, kimi_call):
             "/sell SYM QTY · manual sell\n"
             "/signal · request fresh AI signal now\n"
             "/trades · last 10 trades\n"
+            "/forex &lt;msg&gt; · talk to Claude forex agent (OANDA)\n"
+            "/forex_clear · reset forex chat history\n"
             "/help · this menu"
         ))
     elif cmd == "/help":
@@ -186,6 +190,43 @@ async def _handle_command(client, db, chat_id: int, text: str, kimi_call):
         for t in trades:
             lines.append(f"• {t['side'].upper()} {t['qty']} {t['symbol']} @${t['price']:,.2f}  <i>{t['source']}</i>")
         await _send_message(client, chat_id, "\n".join(lines))
+    elif cmd == "/forex":
+        # Route the rest of the message to Claude forex agent. Per-chat session.
+        msg = text[len("/forex"):].strip()
+        if not msg:
+            await _send_message(client, chat_id, (
+                "<b>FOREX · CLAUDE AGENT</b>\n"
+                "usage: <code>/forex &lt;your request&gt;</code>\n\n"
+                "examples:\n"
+                "• <code>/forex what's EUR/USD doing?</code>\n"
+                "• <code>/forex buy 1000 EUR_USD with a 30 pip stop</code>\n"
+                "• <code>/forex close all gold positions</code>\n"
+                "• <code>/forex show account</code>"
+            ))
+            return
+        if not fx.is_configured():
+            await _send_message(client, chat_id, "⚠ <i>Forex agent disabled. Add ANTHROPIC_API_KEY to backend/.env.</i>")
+            return
+        # Per-chat conversation persistence
+        sess_key = f"tg_{chat_id}"
+        doc = await db.forex_sessions.find_one({"session_id": sess_key}, {"_id": 0})
+        history = doc.get("history", []) if doc else []
+        risk = await get_risk(db)
+        block = bool(risk.get("kill_switch"))
+        await _send_message(client, chat_id, "🧠 <i>claude analyzing…</i>")
+        reply, new_history = await fx.run_agent(history, msg, block_trades=block)
+        await db.forex_sessions.update_one(
+            {"session_id": sess_key},
+            {"$set": {"session_id": sess_key, "history": new_history, "updated_at": datetime.now(timezone.utc).isoformat()}},
+            upsert=True,
+        )
+        # Telegram has 4096 char limit; chunk if needed
+        chunks = [reply[i:i+3800] for i in range(0, len(reply), 3800)] or ["(empty)"]
+        for ch in chunks:
+            await _send_message(client, chat_id, f"<b>📈 forex ▸</b>\n{ch}")
+    elif cmd == "/forex_clear":
+        await db.forex_sessions.delete_one({"session_id": f"tg_{chat_id}"})
+        await _send_message(client, chat_id, "↺ forex chat history cleared.")
     else:
         await _send_message(client, chat_id, "unknown command. /help")
 

@@ -152,8 +152,10 @@ TOOLS = [
 ]
 
 
-def process_tool_call(tool_name: str, tool_input: dict) -> str:
+def process_tool_call(tool_name: str, tool_input: dict, block_trades: bool = False) -> str:
     try:
+        if block_trades and tool_name in ("place_market_order", "place_limit_order", "close_position"):
+            return json.dumps({"error": "kill switch is engaged. all new trading halted via risk gate."})
         if tool_name == "get_price":
             result = get_price(**tool_input)
         elif tool_name == "get_account":
@@ -187,7 +189,7 @@ def _serialise_blocks(content) -> list:
     return out
 
 
-def _run_agent_sync(history: list, user_message: str, max_iters: int = 6) -> Tuple[str, list]:
+def _run_agent_sync(history: list, user_message: str, max_iters: int = 6, block_trades: bool = False) -> Tuple[str, list]:
     if not _client:
         return (
             "Forex agent disabled. Add ANTHROPIC_API_KEY to backend/.env and restart backend.",
@@ -200,7 +202,7 @@ def _run_agent_sync(history: list, user_message: str, max_iters: int = 6) -> Tup
         response = _client.messages.create(
             model=CLAUDE_MODEL,
             max_tokens=1024,
-            system=SYSTEM_PROMPT,
+            system=SYSTEM_PROMPT + ("\n\n[RISK GATE NOTE: kill switch is currently ON — do not attempt to place or close trades. Tell the user clearly.]" if block_trades else ""),
             tools=TOOLS,
             messages=history,
         )
@@ -221,7 +223,7 @@ def _run_agent_sync(history: list, user_message: str, max_iters: int = 6) -> Tup
         # Execute tools
         tool_results = []
         for tu in tool_uses:
-            result = process_tool_call(tu.name, tu.input)
+            result = process_tool_call(tu.name, tu.input, block_trades=block_trades)
             tool_results.append({
                 "type": "tool_result",
                 "tool_use_id": tu.id,
@@ -232,9 +234,9 @@ def _run_agent_sync(history: list, user_message: str, max_iters: int = 6) -> Tup
     return ("Reached max tool iterations without completing.", history)
 
 
-async def run_agent(history: list, user_message: str, max_iters: int = 6) -> Tuple[str, list]:
+async def run_agent(history: list, user_message: str, max_iters: int = 6, block_trades: bool = False) -> Tuple[str, list]:
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _run_agent_sync, history, user_message, max_iters)
+    return await loop.run_in_executor(None, _run_agent_sync, history, user_message, max_iters, block_trades)
 
 
 def status() -> dict:

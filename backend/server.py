@@ -454,13 +454,16 @@ async def forex_chat(req: ForexChatRequest):
     # Load history
     doc = await db.forex_sessions.find_one({"session_id": session_id}, {"_id": 0})
     history = doc.get("history", []) if doc else []
-    reply, new_history = await fx.run_agent(history, req.message)
+    # Risk gate: read kill switch — applies to forex too
+    risk = await te.get_risk(db)
+    block = bool(risk.get("kill_switch"))
+    reply, new_history = await fx.run_agent(history, req.message, block_trades=block)
     await db.forex_sessions.update_one(
         {"session_id": session_id},
         {"$set": {"session_id": session_id, "history": new_history, "updated_at": datetime.now(timezone.utc).isoformat()}},
         upsert=True,
     )
-    return {"session_id": session_id, "reply": reply}
+    return {"session_id": session_id, "reply": reply, "kill_switch": block}
 
 
 @api_router.delete("/forex/chat/{session_id}")
