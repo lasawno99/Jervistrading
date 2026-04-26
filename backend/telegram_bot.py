@@ -363,9 +363,30 @@ async def polling_loop(db, kimi_call):
                         text = msg.get("text", "")
                         if text.startswith("/"):
                             await _handle_command(client, db, chat_id, text, kimi_call)
-                        else:
+                        elif text.strip():
+                            # Plain message → route directly to JARVIS
                             await _add_subscriber(db, chat_id)
-                            await _send_message(client, chat_id, "<i>tip: use /help</i>")
+                            import jarvis_agent as _jv
+                            if not _jv.is_configured():
+                                await _send_message(client, chat_id, "⚠ <i>JARVIS offline — add ANTHROPIC_API_KEY.</i>")
+                                continue
+                            sess_key = f"tg_jv_{chat_id}"
+                            doc = await db.jarvis_sessions.find_one({"session_id": sess_key}, {"_id": 0})
+                            history = doc.get("history", []) if doc else []
+                            await _send_message(client, chat_id, "🧠 <i>jarvis processing…</i>")
+                            try:
+                                reply, new_history = await _jv.chat(db, history, text)
+                                await db.jarvis_sessions.update_one(
+                                    {"session_id": sess_key},
+                                    {"$set": {"session_id": sess_key, "history": new_history, "updated_at": datetime.now(timezone.utc).isoformat()}},
+                                    upsert=True,
+                                )
+                                chunks = [reply[i:i+3800] for i in range(0, len(reply), 3800)] or ["(empty)"]
+                                for ch in chunks:
+                                    await _send_message(client, chat_id, f"<b>🤖 jarvis ▸</b>\n{ch}")
+                            except Exception as e:
+                                logger.exception("jarvis routing error")
+                                await _send_message(client, chat_id, f"⚠ <i>error: {e}</i>")
                     elif "callback_query" in upd:
                         await _handle_callback(client, db, upd["callback_query"])
             except asyncio.CancelledError:
