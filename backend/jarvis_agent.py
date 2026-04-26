@@ -32,6 +32,8 @@ import oanda_client as oa
 import trading_engine as te
 import fx_strategies as fxs
 import mt5_client as mt5
+import mt4_client as mt4
+import price_triggers as pt
 
 logger = logging.getLogger("jarvis")
 
@@ -403,6 +405,43 @@ TOOLS = [
         "description": "Close an MT5 position by ticket id.",
         "input_schema": {"type": "object", "properties": {"ticket": {"type": "integer"}}, "required": ["ticket"]},
     },
+
+    # ---- MT4 (status only — full bridge requires Windows EA setup) ----
+    {
+        "name": "mt4_status",
+        "description": "Check MT4 ZeroMQ bridge status. Returns setup instructions if not configured.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+
+    # ---- Price-event triggers ----
+    {
+        "name": "create_price_alert",
+        "description": "Create a price-event trigger. condition: above/below/crosses_above/crosses_below. action: notify (just alert), market_order (place an order with units + optional stop_loss), or jarvis_prompt (run a JARVIS prompt when triggered).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "instrument": {"type": "string", "description": "e.g. EUR_USD"},
+                "condition": {"type": "string", "enum": ["above", "below", "crosses_above", "crosses_below"]},
+                "level": {"type": "number", "description": "Price level"},
+                "action": {"type": "string", "enum": ["notify", "market_order", "jarvis_prompt"], "default": "notify"},
+                "order_units": {"type": "integer", "description": "If action=market_order. Positive=buy, negative=sell"},
+                "order_stop_loss": {"type": "number"},
+                "jarvis_prompt": {"type": "string", "description": "If action=jarvis_prompt"},
+                "once": {"type": "boolean", "default": True, "description": "Auto-cancel after firing once"},
+            },
+            "required": ["instrument", "condition", "level"],
+        },
+    },
+    {
+        "name": "list_price_alerts",
+        "description": "List active price alerts. Optionally filter by status: active/fired/cancelled.",
+        "input_schema": {"type": "object", "properties": {"status": {"type": "string"}}},
+    },
+    {
+        "name": "cancel_price_alert",
+        "description": "Cancel a price alert by id.",
+        "input_schema": {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]},
+    },
 ]
 
 
@@ -679,6 +718,14 @@ async def _dispatch_tool(db, tool_name: str, tool_input: dict, block_trades: boo
             res = mt5.market_order(**tool_input)
         elif tool_name == "mt5_close_position":
             res = mt5.close_position(**tool_input)
+        elif tool_name == "mt4_status":
+            res = mt4.status()
+        elif tool_name == "create_price_alert":
+            res = await pt.create_alert(db, **tool_input)
+        elif tool_name == "list_price_alerts":
+            res = {"alerts": await pt.list_alerts(db, **tool_input)}
+        elif tool_name == "cancel_price_alert":
+            res = await pt.cancel_alert(db, **tool_input)
         else:
             res = {"error": f"unknown tool {tool_name}"}
         return json.dumps(res, default=str)

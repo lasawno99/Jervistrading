@@ -656,6 +656,45 @@ async def mt5_ohlc(symbol: str, timeframe: str = "M5", count: int = 200):
     return mt5.get_ohlc(symbol, timeframe, count)
 
 
+# ================= MT4 (stub) =================
+
+import mt4_client as mt4
+import price_triggers as pt
+
+
+@api_router.get("/mt4/status")
+async def mt4_status():
+    return mt4.status()
+
+
+# ================= PRICE TRIGGERS =================
+
+class PriceAlertRequest(BaseModel):
+    instrument: str
+    condition: Literal["above", "below", "crosses_above", "crosses_below"]
+    level: float
+    action: Literal["notify", "market_order", "jarvis_prompt"] = "notify"
+    order_units: Optional[int] = None
+    order_stop_loss: Optional[float] = None
+    jarvis_prompt: Optional[str] = None
+    once: bool = True
+
+
+@api_router.post("/triggers/alert")
+async def trigger_create(req: PriceAlertRequest):
+    return await pt.create_alert(db, **req.model_dump())
+
+
+@api_router.get("/triggers/alerts")
+async def trigger_list(status: Optional[str] = None):
+    return {"alerts": await pt.list_alerts(db, status)}
+
+
+@api_router.delete("/triggers/alerts/{aid}")
+async def trigger_cancel(aid: str):
+    return await pt.cancel_alert(db, aid)
+
+
 # ================= APP WIRING =================
 
 app.include_router(api_router)
@@ -695,6 +734,8 @@ async def on_startup():
     _bg_tasks.append(asyncio.create_task(_equity_snapshot_loop()))
     # JARVIS scheduler loop — every 30s
     _bg_tasks.append(asyncio.create_task(scheduler_loop(db, jv.chat, broadcast_fn=tg.broadcast_text, interval_sec=30)))
+    # Price-event trigger loop — every 8s
+    _bg_tasks.append(asyncio.create_task(pt.trigger_loop(db, jv.chat, broadcast_fn=tg.broadcast_text, interval_sec=8)))
     # Auto-resume any live FX strategies that were running before restart
     try:
         n = await fxs.resume_active_strategies(db)

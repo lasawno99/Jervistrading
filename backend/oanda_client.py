@@ -184,6 +184,11 @@ def place_market_order(instrument: str, units: int, stop_loss: Optional[float] =
     blocked = _check_kill_switch_sync()
     if blocked:
         return {"error": blocked}
+    # Live-trading gate: block real-money orders unless explicit opt-in
+    env = _cfg()["env"]
+    live_enabled = os.environ.get("LIVE_TRADING_ENABLED", "").lower() in ("1", "true", "yes")
+    if env == "live" and not live_enabled:
+        return {"error": "OANDA_ENV is 'live' but LIVE_TRADING_ENABLED is not set. Refusing real-money order."}
     inst = _normalize_instrument(instrument)
     order = {
         "type": "MARKET",
@@ -218,6 +223,10 @@ def place_limit_order(instrument: str, units: int, price: float,
     blocked = _check_kill_switch_sync()
     if blocked:
         return {"error": blocked}
+    env = _cfg()["env"]
+    live_enabled = os.environ.get("LIVE_TRADING_ENABLED", "").lower() in ("1", "true", "yes")
+    if env == "live" and not live_enabled:
+        return {"error": "OANDA_ENV is 'live' but LIVE_TRADING_ENABLED is not set."}
     inst = _normalize_instrument(instrument)
     order = {
         "type": "LIMIT",
