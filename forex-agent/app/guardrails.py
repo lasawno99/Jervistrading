@@ -70,7 +70,8 @@ class GuardrailState:
 
     order_timestamps: Deque[float] = field(default_factory=lambda: deque(maxlen=64))
     halted_for_utc_date: Optional[str] = None
-    halted_alert_sent: bool = False
+    daily_alert_sent_date: Optional[str] = None
+    kill_switch_active: bool = False
 
     def record_order(self, now: Optional[float] = None) -> None:
         self.order_timestamps.append(now if now is not None else time.time())
@@ -82,13 +83,21 @@ class GuardrailState:
         cutoff = n - window_seconds
         return sum(1 for t in self.order_timestamps if t >= cutoff)
 
+    @staticmethod
+    def _utc_date_str(now: Optional[datetime] = None) -> str:
+        return (now or datetime.now(timezone.utc)).strftime("%Y-%m-%d")
+
     def is_halted_today(self, now: Optional[datetime] = None) -> bool:
-        today = (now or datetime.now(timezone.utc)).strftime("%Y-%m-%d")
-        return self.halted_for_utc_date == today
+        return self.halted_for_utc_date == self._utc_date_str(now)
 
     def halt_today(self, now: Optional[datetime] = None) -> None:
-        today = (now or datetime.now(timezone.utc)).strftime("%Y-%m-%d")
-        self.halted_for_utc_date = today
+        self.halted_for_utc_date = self._utc_date_str(now)
+
+    def alert_already_sent_today(self, now: Optional[datetime] = None) -> bool:
+        return self.daily_alert_sent_date == self._utc_date_str(now)
+
+    def mark_alert_sent(self, now: Optional[datetime] = None) -> None:
+        self.daily_alert_sent_date = self._utc_date_str(now)
 
 
 def _max_position_units() -> int:
@@ -109,17 +118,24 @@ def check_order(
 ) -> None:
     """Raise GuardrailRejection if the order fails any hard safety rule.
 
-    Rules (in order):
+    Rules (in order; cheapest first, manual override above all automated checks):
+      0. Kill switch active → reject (manual override).
       1. TRADING_MODE must be 'paper'.
       2. OANDA_ENVIRONMENT must be 'practice'.
-      3. order.stop_loss must be present.
-      4. order.units must be > 0 and <= MAX_POSITION_UNITS.
-      5. Daily loss (realized + unrealized) must not exceed DAILY_LOSS_LIMIT_PCT.
-         If exceeded, halt for the rest of the UTC day and fire on_daily_halt once.
-      6. No more than 5 orders in any 60-second window.
+      3. Already halted earlier this UTC day → reject.
+      4. order.stop_loss must be present.
+      5. order.units must be > 0 and <= MAX_POSITION_UNITS.
+      6. Daily loss (realized + unrealized) must not exceed DAILY_LOSS_LIMIT_PCT.
+         If exceeded, halt for the rest of the UTC day and fire on_daily_halt
+         exactly once per UTC day (idempotent across concurrent callers).
+      7. No more than 5 orders in any 60-second window.
 
-    on_daily_halt is invoked exactly once per UTC day with a Telegram-ready string.
+    on_daily_halt is invoked at most once per UTC day with a Telegram-ready string.
     """
+    # 0
+    if state.kill_switch_active:
+        raise GuardrailRejection("Kill switch is ON — all trading halted.")
+
     # 1
     if os.environ.get("TRADING_MODE", "").strip().lower() != "paper":
         raise GuardrailRejection("TRADING_MODE is not 'paper' — all orders rejected")
@@ -130,17 +146,17 @@ def check_order(
             "OANDA_ENVIRONMENT is not 'practice' — all orders rejected"
         )
 
-    # 5a — already halted earlier today
+    # 3 — already halted earlier today
     if state.is_halted_today():
         raise GuardrailRejection(
             "Daily loss limit already triggered — trading halted for the UTC day"
         )
 
-    # 3
+    # 4
     if order.stop_loss is None:
         raise GuardrailRejection("stop_loss is required on every order")
 
-    # 4
+    # 5
     if order.units <= 0:
         raise GuardrailRejection(f"order.units must be > 0 (got {order.units})")
     if order.units > _max_position_units():
@@ -148,7 +164,7 @@ def check_order(
             f"order.units {order.units} exceeds MAX_POSITION_UNITS {_max_position_units()}"
         )
 
-    # 5b — fresh check against current account snapshot
+    # 6 — fresh check against current account snapshot
     limit_pct = _daily_loss_limit_pct()
     if account.loss_pct >= limit_pct:
         state.halt_today()
@@ -156,15 +172,15 @@ def check_order(
             f"🛑 Daily loss limit hit ({account.loss_pct:.2f}% >= {limit_pct:.2f}%), "
             "trading halted."
         )
-        if on_daily_halt and not state.halted_alert_sent:
+        if on_daily_halt and not state.alert_already_sent_today():
+            state.mark_alert_sent()
             try:
                 on_daily_halt(msg)
-                state.halted_alert_sent = True
             except Exception as e:
                 log.error("daily_halt_alert_failed", error=str(e))
         raise GuardrailRejection(msg)
 
-    # 6
+    # 7
     if state.recent_order_count(60.0, now=now) >= 5:
         raise GuardrailRejection(
             "Rate limit: more than 5 orders in the last 60 seconds"
