@@ -51,29 +51,59 @@ def _synthetic_series(instrument: str, start: str, end: str, granularity: str = 
 
 
 def _oanda_candles(instrument: str, start: str, end: str, granularity: str = "H1") -> pd.DataFrame:
-    """Fetch real OANDA candles via httpx. Returns DataFrame indexed by UTC datetime with `price` (close) col."""
+    """Fetch real OANDA candles via httpx, paginated. Returns DataFrame indexed by UTC datetime with `price` (close) col."""
     if not oa.is_configured():
         raise RuntimeError("OANDA not configured")
     inst = oa._normalize_instrument(instrument)
     base = oa._base_url()
     headers = oa._headers()
-    params = {
-        "from": start, "to": end, "granularity": granularity, "price": "M",
-    }
-    r = httpx.get(f"{base}/v3/instruments/{inst}/candles", headers=headers, params=params, timeout=30)
-    if r.status_code >= 400:
-        raise RuntimeError(f"OANDA candles error: {r.status_code} {r.text[:200]}")
-    candles = r.json().get("candles", [])
-    rows = []
-    for c in candles:
-        if not c.get("complete"):
-            continue
-        rows.append({"time": c["time"], "price": float(c["mid"]["c"])})
-    df = pd.DataFrame(rows)
+    # Normalize start/end to RFC3339 UTC seconds (OANDA-friendly)
+    def _to_rfc(s: str) -> str:
+        try:
+            dt = pd.to_datetime(s, utc=True)
+        except Exception:
+            dt = pd.Timestamp(s, tz="UTC")
+        return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    cur = _to_rfc(start)
+    end_rfc = _to_rfc(end)
+    all_rows: list = []
+    safety = 0
+    while True:
+        safety += 1
+        if safety > 50:
+            break
+        # OANDA disallows `count` when both `to` and `from` are set, so paginate by `from+count`.
+        params = {"from": cur, "granularity": granularity, "price": "M", "count": 5000}
+        r = httpx.get(f"{base}/v3/instruments/{inst}/candles", headers=headers, params=params, timeout=30)
+        if r.status_code >= 400:
+            raise RuntimeError(f"OANDA candles error: {r.status_code} {r.text[:200]}")
+        candles = r.json().get("candles", [])
+        new_complete = [c for c in candles if c.get("complete")]
+        if not new_complete:
+            break
+        # Trim anything past end_rfc
+        new_complete = [c for c in new_complete if c["time"] <= end_rfc]
+        if not new_complete:
+            break
+        for c in new_complete:
+            all_rows.append({"time": c["time"], "price": float(c["mid"]["c"])})
+        last_time = new_complete[-1]["time"]
+        # Done if we've reached or passed end
+        if last_time >= end_rfc:
+            break
+        # Advance by 1 second past last_time
+        next_start = pd.to_datetime(last_time) + pd.Timedelta(seconds=1)
+        cur = next_start.strftime("%Y-%m-%dT%H:%M:%SZ")
+        # If we got fewer than ~5000, server has no more data
+        if len(new_complete) < 4900:
+            break
+
+    df = pd.DataFrame(all_rows)
     if df.empty:
         return pd.DataFrame({"price": []})
     df["time"] = pd.to_datetime(df["time"])
-    df = df.set_index("time")
+    df = df.drop_duplicates("time").set_index("time").sort_index()
     return df
 
 
