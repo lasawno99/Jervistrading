@@ -36,6 +36,8 @@ except Exception:
 # Trading + Telegram modules
 import trading_engine as te
 import telegram_bot as tg
+import forex_agent as fx
+import oanda_client as oa
 
 app = FastAPI(title="Jarvis Command Center API")
 api_router = APIRouter(prefix="/api")
@@ -412,6 +414,59 @@ async def bot_update_risk(payload: dict):
 @api_router.get("/bot/equity-curve")
 async def bot_equity_curve(limit: int = 200):
     return await te.get_equity_curve(db, limit)
+
+
+# ================= FOREX (Claude + OANDA) =================
+
+class ForexChatRequest(BaseModel):
+    message: str
+    session_id: Optional[str] = None
+
+
+@api_router.get("/forex/status")
+async def forex_status():
+    return {**fx.status(), "env": os.environ.get("OANDA_ENV", "practice")}
+
+
+@api_router.get("/forex/account")
+async def forex_account():
+    return oa.get_account()
+
+
+@api_router.get("/forex/positions")
+async def forex_positions():
+    return oa.get_open_positions()
+
+
+@api_router.get("/forex/history")
+async def forex_history(count: int = 20):
+    return oa.get_trade_history(count)
+
+
+@api_router.get("/forex/price")
+async def forex_price(instrument: str):
+    return oa.get_price(instrument)
+
+
+@api_router.post("/forex/chat")
+async def forex_chat(req: ForexChatRequest):
+    session_id = req.session_id or str(uuid.uuid4())
+    # Load history
+    doc = await db.forex_sessions.find_one({"session_id": session_id}, {"_id": 0})
+    history = doc.get("history", []) if doc else []
+    reply, new_history = await fx.run_agent(history, req.message)
+    await db.forex_sessions.update_one(
+        {"session_id": session_id},
+        {"$set": {"session_id": session_id, "history": new_history, "updated_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True,
+    )
+    return {"session_id": session_id, "reply": reply}
+
+
+@api_router.delete("/forex/chat/{session_id}")
+async def forex_chat_clear(session_id: str):
+    await db.forex_sessions.delete_one({"session_id": session_id})
+    return {"ok": True}
 
 
 # ================= APP WIRING =================

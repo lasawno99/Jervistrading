@@ -14,6 +14,7 @@ import BotSignalsPanel from "@/components/panels/BotSignalsPanel";
 import BotControlPanel from "@/components/panels/BotControlPanel";
 import EquityCurvePanel from "@/components/panels/EquityCurvePanel";
 import RiskPanel from "@/components/panels/RiskPanel";
+import ForexDeskPanel from "@/components/panels/ForexDeskPanel";
 import { Activity, Cpu, Radio, Wifi } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -215,9 +216,10 @@ function App() {
 
           <div className="col-span-12 lg:col-span-3 space-y-4">
             <BotControlPanel delay={60} onChange={bumpRefresh} />
-            <RiskPanel delay={140} onChange={bumpRefresh} />
-            <TwitterPanel delay={220} />
-            <NewsPanel delay={300} />
+            <ForexDeskPanel delay={120} />
+            <RiskPanel delay={180} onChange={bumpRefresh} />
+            <TwitterPanel delay={260} />
+            <NewsPanel delay={340} />
           </div>
         </div>
       </main>
