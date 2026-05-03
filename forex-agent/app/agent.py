@@ -116,6 +116,28 @@ def _tool_specs() -> List[Dict[str, Any]]:
                 "required": ["reason"],
             },
         },
+        {
+            "name": "close_position",
+            "description": (
+                "Close an existing open position on OANDA practice to lock in "
+                "profit or cut losses early. Use when thesis breaks, momentum "
+                "stalls, or a tactical exit makes sense before TP/SL are hit. "
+                "side='all' closes whichever side is open."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "instrument": {"type": "string"},
+                    "side": {
+                        "type": "string",
+                        "enum": ["long", "short", "all"],
+                        "default": "all",
+                    },
+                    "reason": {"type": "string"},
+                },
+                "required": ["instrument", "reason"],
+            },
+        },
     ]
 
 
@@ -291,6 +313,14 @@ class Agent:
                         for k in ("instrument", "side", "units", "stop_loss", "take_profit")
                     }
                     final_action["result"] = result
+                elif tu.name == "close_position":
+                    final_action["action"] = "close_position"
+                    final_action["reason"] = args.get("reason", "")
+                    final_action["details"] = {
+                        "instrument": args.get("instrument"),
+                        "side": args.get("side", "all"),
+                    }
+                    final_action["result"] = result
                 elif tu.name == "no_trade":
                     final_action["action"] = "no_trade"
                     final_action["reason"] = args.get("reason", "")
@@ -355,6 +385,14 @@ class Agent:
                 )
             if name == "no_trade":
                 return {"status": "no_trade", "reason": args.get("reason", "")}
+            if name == "close_position":
+                if dry_run:
+                    return {"status": "skipped", "reason": "dry_run"}
+                return await asyncio.to_thread(
+                    self._oanda.close_position,
+                    args["instrument"],
+                    args.get("side", "all"),
+                )
             return {"error": f"unknown tool: {name}"}
         except Exception as e:
             log.error("tool_failed", name=name, error=str(e))

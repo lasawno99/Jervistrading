@@ -134,6 +134,47 @@ class OandaTool:
             )
         return out
 
+    def close_position(self, instrument: str, side: str = "all") -> Dict[str, Any]:
+        """Close an open position to lock in profit/loss.
+
+        side ∈ {"long", "short", "all"}. "all" closes whichever side is open.
+        """
+        if side not in ("long", "short", "all"):
+            raise ValueError(f"side must be long|short|all (got {side!r})")
+
+        body: Dict[str, Any] = {}
+        if side in ("long", "all"):
+            body["longUnits"] = "ALL"
+        if side in ("short", "all"):
+            body["shortUnits"] = "ALL"
+
+        req = v20_positions.PositionClose(
+            accountID=self._account_id, instrument=instrument, data=body
+        )
+        try:
+            resp = self._client.request(req)
+        except Exception as e:
+            log.warning("close_position_failed", instrument=instrument, error=str(e))
+            return {"status": "error", "reason": str(e)}
+
+        long_fill = resp.get("longOrderFillTransaction") or {}
+        short_fill = resp.get("shortOrderFillTransaction") or {}
+        realized = float(long_fill.get("pl", 0) or 0) + float(short_fill.get("pl", 0) or 0)
+        log.info(
+            "position_closed",
+            instrument=instrument,
+            side=side,
+            realized_pl=realized,
+        )
+        return {
+            "status": "closed",
+            "instrument": instrument,
+            "side": side,
+            "realized_pl": realized,
+            "long_fill_id": long_fill.get("id"),
+            "short_fill_id": short_fill.get("id"),
+        }
+
     def get_account_summary(self) -> Dict[str, Any]:
         req = v20_accounts.AccountSummary(accountID=self._account_id)
         resp = self._client.request(req)
