@@ -1,89 +1,71 @@
-# PRD — `forex-agent` (Railway worker)
+# PRD — JARVIS Trading System (monorepo)
 
-## Original problem statement
+## Services in this repo
 
-"Build a Python application called `forex-agent`. It is a long-running worker (NOT a web app) that uses an LLM to monitor forex markets, place paper trades on an OANDA practice account, and send updates via Telegram. It must be deployable to Railway with zero rework."
+| Service | Folder | Type | Role |
+|---|---|---|---|
+| JARVIS dashboard | `/app/backend` + `/app/frontend` | FastAPI + React (Emergent) | Command dashboard, runs the JARVIS Claude brain, 40 tools |
+| forex-agent | `/app/forex-agent` | Python worker (Railway) | OANDA paper-trading bot, Telegram command bot (polls) |
+| kronos-agent | `/app/kronos-agent` | Python worker (Railway) | Runs Kronos forecaster on OANDA candles, sends signals to Telegram |
+| knowledge-arb | `/app/knowledge-arb` | Python worker (Railway) | Tavily + Claude narrative-emergence scout, sends signals |
 
-## Non-negotiable rules
+All three Railway services share one Telegram bot (`@Jervistradebot`, token `8694341880:...`). Only **forex-agent** polls; kronos-agent and knowledge-arb are send-only → no 409 conflicts.
 
-- Paper trading only. No live path. No MT4/MT5/Windows VPS/Cloudflare Tunnel.
-- OANDA practice environment only (`api-fxpractice.oanda.com`).
-- Telegram via long-polling (no webhooks).
-- All secrets from `os.environ`.
-- Guardrails run in deterministic Python, outside the LLM.
+## forex-agent
 
-## Architecture (v1)
+See previous PRD entry. 8 deterministic guardrails, 10/10 tests passing, Claude Sonnet tool loop, APScheduler + Telegram polling, SIGTERM-graceful shutdown. Railway-ready.
 
-- Pure Python worker (no HTTP listener) — distinct from the JARVIS dashboard which lives in `/app/backend` + `/app/frontend` and stays on Emergent.
-- Single asyncio event loop hosts both `python-telegram-bot` (polling) and `APScheduler` (`AsyncIOScheduler`).
-- Slow LLM work dispatches via `asyncio.create_task` so the polling loop is never blocked.
-- Lazy daily-balance reset: starting NAV captured on first order of each new UTC day.
-- Three scheduled jobs: morning brief 08:00 UTC, alert scan via `SCHEDULE_CRON`, 60s health-check heartbeat.
+**Status:** Pushed to GitHub. Live Railway deploy pending successful `TELEGRAM_BOT_TOKEN` paste (last reported error was `InvalidToken` from a fat-fingered paste — re-paste `8694341880:AAGAaezBo2t3ZlTyJSB6g-NreqkSkTiM9pk` in Railway Variables).
 
-## Tech stack
+## kronos-agent (new 2026-05-03)
 
-Python 3.11, anthropic 0.97, oandapyV20 0.7.2, tavily-python, python-telegram-bot 21.7, APScheduler 3.10, structlog, python-dotenv, pytest.
+Signal-only Railway worker. No trading.
 
-## Slash commands
+- **Model:** `NeoQuasar/Kronos-small` (~25M params, CPU-OK), `NeoQuasar/Kronos-Tokenizer-base`. Cached at `/hf_cache`.
+- **Data:** OANDA practice candles (read-only), H1 granularity, 360h lookback, 24h forecast, 20 Monte-Carlo samples.
+- **Signal logic:** `upside_prob = share of predicted steps above current price`; `vol_amp = predicted_std / historical_std`. Thresholds configurable (default 0.65 / 0.35, max_vol_amp 2.0).
+- **Schedule:** `0 */4 * * 1-5` (every 4h Mon-Fri, UTC).
+- **Output:** Telegram message with direction (BUY/SELL/SKIP), confidence (high/medium/low), price targets, upside probability, vol amplification.
 
-`/start`, `/brief`, `/positions`, `/balance`, `/kill on|off`, `/schedules`, `/jarvis [text]`. Allowlist enforced via `TELEGRAM_CHAT_ID`.
+Files: `config.py`, `oanda_fetch.py`, `kronos_client.py` (lazy-loads model), `signal.py`, `main.py`. `Dockerfile` clones the Kronos repo + adds `/app/Kronos` to PYTHONPATH. Lint clean.
 
-## Guardrails (8 rules, all tested)
+## knowledge-arb (new 2026-05-03)
 
-1. Kill switch active → reject
-2. `TRADING_MODE != "paper"` → reject
-3. `OANDA_ENVIRONMENT != "practice"` → reject
-4. Already halted earlier this UTC day → reject
-5. `stop_loss is None` → reject
-6. `units <= 0` or `units > MAX_POSITION_UNITS` → reject
-7. Daily net loss ≥ `DAILY_LOSS_LIMIT_PCT` → halt rest of day, fire one Telegram alert
-8. \>5 orders in any 60s window → reject
+Signal-only Railway worker. Narrative-emergence scout.
 
-## Status
+- **Input:** `WATCHLIST` comma-separated topics.
+- **Fetch:** Tavily news (24h window) + general (7d window), counts + titles + domains + snippets per topic.
+- **Score:** Claude Sonnet 4.5 with strict JSON-only scoring prompt → `{stage, confidence 1-10, thesis, tickers (up to 5), risks}`.
+- **Alert condition:** `stage ∈ {pre-emerging, emerging, breakout}` AND `confidence ≥ MIN_CONFIDENCE`. 7-day per-(topic, stage) cooldown.
+- **Schedule:** `0 */6 * * *` (every 6h).
 
-**v1 complete (2026-04-26).** 10/10 tests passing. Boot smoke test passes against real Anthropic/OANDA/Telegram APIs.
+Files: `config.py`, `scout.py` (Tavily), `scorer.py` (Claude), `state.py` (cooldown), `main.py`. Lint clean. **Live smoke-tested** 2026-05-03 — Tavily + Claude both reached real APIs, scored "AI agents" as emerging/6, "small modular reactors" as pre-emerging/3, no alerts sent (below threshold — correct behavior).
 
-## What's implemented
+## Deploy plan
 
-- `app/config.py`, `app/guardrails.py`, `app/agent.py` (Anthropic tool loop), `app/main.py` (APScheduler + Telegram + handlers + SIGTERM shutdown).
-- Tools: `oanda_tool.py` (locked to practice), `news_tool.py` (Tavily), `telegram_tool.py`. Stubs: `email_tool.py`, `calendar_tool.py`.
-- `Dockerfile`, `railway.json`, GitHub Actions test workflow, `.env.example`, `.gitignore`.
-- `README.md` with quickstart, Railway steps, env table, slash command reference, troubleshooting, going-live warning.
+Three separate Railway services, same GitHub repo, different Root Directories:
 
-## Backlog (P1)
+1. `forex-agent` — Root Directory `forex-agent`
+2. `kronos-agent` — Root Directory `kronos-agent`
+3. `knowledge-arb` — Root Directory `knowledge-arb`
 
-- User fills real `TAVILY_API_KEY` and `TELEGRAM_CHAT_ID` in Railway → Variables.
-- User stops or token-rotates the JARVIS Telegram bot (currently polling same token in `/app/backend`) before deploy. Two pollers on one token → 409 Conflict.
-- Push to GitHub, connect Railway, deploy.
-- Run 5-prompt verification demo from Telegram: `/start`, `/balance`, `/positions`, `/brief`, `/jarvis what's your read on EUR_USD?`.
+Each service pastes its own env vars. Credentials can be shared (same Anthropic/Tavily/OANDA/Telegram keys).
 
-## Backlog (P2)
+## Backlog
 
-- MongoDB v2 for persistent guardrail state (kill switch + daily halt survives redeploys).
-- Shared state with the Emergent JARVIS dashboard via the same Mongo.
-- Real RSS news scout (currently Tavily only).
-- Crypto exchanges (Binance/Bybit) integration.
+- **P0 user action:** Push the two new services to GitHub (Save to GitHub button). Add two Railway services. Verify first alerts land in Telegram.
+- **P1:** Move from single-bot-shared-token to per-service bots if signal channels get noisy.
+- **P2:** Kronos upgrade to `Kronos-base` on a GPU host if medium-term accuracy matters more than cost.
+- **P2:** knowledge-arb v2 — add Reddit + Google Trends as secondary signals beyond Tavily.
+- **P2:** Shared MongoDB so kill-switch / cooldown / daily-halt state survives Railway redeploys.
 
-## Files
+## Last session ops checklist
 
-```
-/app/forex-agent/
-├── app/
-│   ├── __init__.py
-│   ├── main.py
-│   ├── agent.py
-│   ├── config.py
-│   ├── guardrails.py
-│   ├── tools/
-│   │   ├── oanda_tool.py
-│   │   ├── news_tool.py
-│   │   ├── telegram_tool.py
-│   │   ├── email_tool.py        (stub)
-│   │   └── calendar_tool.py     (stub)
-│   └── prompts/system.md
-├── tests/test_guardrails.py     (10 passing)
-├── Dockerfile, railway.json, requirements.txt
-├── .env.example, .gitignore
-├── .github/workflows/test.yml
-└── README.md
-```
+- [x] Tavily key validated against live API
+- [x] New Telegram bot `@Jervistradebot` (token `8694341880:...`) working
+- [x] forex-agent boot smoke test passed end-to-end
+- [x] kronos-agent scaffolded, lint clean
+- [x] knowledge-arb scaffolded, lint clean, **live end-to-end smoke test passed**
+- [ ] forex-agent Railway deploy green (blocked on user re-pasting token)
+- [ ] kronos-agent Railway deploy
+- [ ] knowledge-arb Railway deploy
