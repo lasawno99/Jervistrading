@@ -99,7 +99,14 @@ async def run_pipeline(
             log.warning("layer2_debate_failed", instrument=instrument)
             continue
         log.info("layer2_tauric_verdict", instrument=instrument,
-                 verdict=verdict.verdict, confidence=verdict.confidence)
+                 verdict=verdict.verdict, confidence=verdict.confidence,
+                 fundamentals=verdict.fundamentals[:400],
+                 sentiment=verdict.sentiment[:400],
+                 technical=verdict.technical[:400],
+                 bull=verdict.bull[:400],
+                 bear=verdict.bear[:400],
+                 trader=verdict.trader[:400],
+                 risk_manager=verdict.risk_manager[:400])
 
         # Layer 4: synthesis
         decision = synthesize(instrument, verdict, kronos_sig, cfg.base_position_units)

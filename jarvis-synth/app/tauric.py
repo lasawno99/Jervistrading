@@ -85,21 +85,31 @@ Return ONLY valid JSON:
   "rationale": "1-2 sentences"
 }
 
-Bias toward HOLD when fundamentals/sentiment/technicals disagree.
+Decision rules:
+- HOLD only when fundamentals/sentiment/technicals genuinely disagree OR all
+  three are ambivalent. "Mixed picture" alone is NOT a reason to HOLD.
+- If 2 of 3 analysts lean the same direction AND Kronos confirms,
+  recommend at least OVERWEIGHT (long) or UNDERWEIGHT (short).
+- If all 3 analysts AND Kronos align cleanly, recommend BUY/SELL.
+- Confidence ≥ 7 requires real edge; don't inflate it.
 """
 
 _RISK_SYSTEM = """You are the RISK MANAGER. Review the trader's verdict and
 the full debate. You can:
   - confirm the trader's verdict
-  - downgrade by one notch (e.g. BUY → OVERWEIGHT, OVERWEIGHT → HOLD)
-  - flip to HOLD if the bear case is credible enough
+  - downgrade by one notch (e.g. BUY → OVERWEIGHT) if a specific risk
+    materially changes the risk/reward
+  - flip to HOLD only if the bear case credibly invalidates the entry
   - reduce confidence by 1-3 points
+
+Do NOT downgrade reflexively. The trader has already weighed both sides.
+Only intervene when you see something the trader missed or underweighted.
 
 Return ONLY valid JSON:
 {
   "final_verdict": "SELL" | "UNDERWEIGHT" | "HOLD" | "OVERWEIGHT" | "BUY",
   "final_confidence": 1..10,
-  "review": "1 sentence"
+  "review": "1 sentence — what you changed and why, or 'confirming' if no change"
 }
 """
 
@@ -169,7 +179,7 @@ class TauricDebate:
         macro_block = (
             f"Instrument: {instrument}\n"
             f"Recent headlines:\n- " + "\n- ".join(macro_headlines or ["(none)"]) + "\n"
-            f"Economic calendar:\n- " + "\n- ".join(calendar or ["(none)"])
+            "Economic calendar:\n- " + "\n- ".join(calendar or ["(none)"])
         )
         candles_block = f"Instrument: {instrument}\n{_candle_summary(candles)}\n{_kronos_summary(kronos_signal)}"
 
