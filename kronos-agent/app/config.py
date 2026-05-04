@@ -25,6 +25,10 @@ REQUIRED = (
     "UPSIDE_PROB_LOW",
     "MAX_VOL_AMP",
     "KRONOS_SIZE",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_MODEL",
+    "DEBATE_ENABLED",
+    "TAVILY_API_KEY",
 )
 
 
@@ -45,6 +49,10 @@ class Config:
     upside_prob_low: float
     max_vol_amp: float
     kronos_size: str
+    anthropic_api_key: str
+    anthropic_model: str
+    debate_enabled: bool
+    tavily_api_key: str
 
 
 def load_config() -> Config:
@@ -76,4 +84,8 @@ def load_config() -> Config:
         upside_prob_low=float(os.environ["UPSIDE_PROB_LOW"]),
         max_vol_amp=float(os.environ["MAX_VOL_AMP"]),
         kronos_size=size,
+        anthropic_api_key=os.environ["ANTHROPIC_API_KEY"],
+        anthropic_model=os.environ["ANTHROPIC_MODEL"],
+        debate_enabled=os.environ["DEBATE_ENABLED"].strip().lower() in ("1", "true", "yes"),
+        tavily_api_key=os.environ["TAVILY_API_KEY"],
     )
