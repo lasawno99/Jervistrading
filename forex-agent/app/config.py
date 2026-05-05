@@ -116,18 +116,23 @@ def load_config() -> Config:
     except ValueError as e:
         raise RuntimeError("DAILY_LOSS_LIMIT_PCT must be a positive number") from e
 
+    # Defensively strip ALL whitespace (including embedded newlines) from
+    # secrets — mobile clipboards sometimes inject \n mid-string when pasting.
+    def _clean(name: str) -> str:
+        return "".join(os.environ[name].split())
+
     return Config(
-        anthropic_api_key=os.environ["ANTHROPIC_API_KEY"],
-        anthropic_model=os.environ["ANTHROPIC_MODEL"],
-        oanda_api_token=os.environ["OANDA_API_TOKEN"],
-        oanda_account_id=os.environ["OANDA_ACCOUNT_ID"],
+        anthropic_api_key=_clean("ANTHROPIC_API_KEY"),
+        anthropic_model=os.environ["ANTHROPIC_MODEL"].strip(),
+        oanda_api_token=_clean("OANDA_API_TOKEN"),
+        oanda_account_id=_clean("OANDA_ACCOUNT_ID"),
         oanda_environment=oanda_env,
-        tavily_api_key=os.environ["TAVILY_API_KEY"],
-        telegram_bot_token=os.environ["TELEGRAM_BOT_TOKEN"],
-        telegram_chat_id=os.environ["TELEGRAM_CHAT_ID"],
+        tavily_api_key=_clean("TAVILY_API_KEY"),
+        telegram_bot_token=_clean("TELEGRAM_BOT_TOKEN"),
+        telegram_chat_id=_clean("TELEGRAM_CHAT_ID"),
         trading_mode=trading_mode,
         instruments=instruments,
-        schedule_cron=os.environ["SCHEDULE_CRON"],
+        schedule_cron=os.environ["SCHEDULE_CRON"].strip(),
         max_position_units=max_units,
         daily_loss_limit_pct=daily_loss,
     )

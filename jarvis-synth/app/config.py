@@ -59,15 +59,21 @@ def load_config() -> Config:
     if size not in ("mini", "small", "base"):
         raise RuntimeError(f"KRONOS_SIZE must be mini|small|base (got {size!r})")
 
+    # Defensively strip whitespace/newlines from every secret-like value.
+    # Mobile clipboards sometimes inject newlines mid-string when pasting.
+    def _clean(name: str) -> str:
+        v = os.environ[name]
+        return "".join(v.split())  # removes ALL whitespace including embedded \n
+
     return Config(
-        anthropic_api_key=os.environ["ANTHROPIC_API_KEY"],
-        anthropic_model=os.environ["ANTHROPIC_MODEL"],
-        oanda_api_token=os.environ["OANDA_API_TOKEN"],
-        oanda_account_id=os.environ["OANDA_ACCOUNT_ID"],
+        anthropic_api_key=_clean("ANTHROPIC_API_KEY"),
+        anthropic_model=os.environ["ANTHROPIC_MODEL"].strip(),
+        oanda_api_token=_clean("OANDA_API_TOKEN"),
+        oanda_account_id=_clean("OANDA_ACCOUNT_ID"),
         oanda_environment="practice",
-        tavily_api_key=os.environ["TAVILY_API_KEY"],
-        telegram_bot_token=os.environ["TELEGRAM_BOT_TOKEN"],
-        telegram_chat_id=os.environ["TELEGRAM_CHAT_ID"],
+        tavily_api_key=_clean("TAVILY_API_KEY"),
+        telegram_bot_token=_clean("TELEGRAM_BOT_TOKEN"),
+        telegram_chat_id=_clean("TELEGRAM_CHAT_ID"),
         instruments=[i.strip() for i in os.environ["INSTRUMENTS"].split(",") if i.strip()],
         granularity=os.environ["GRANULARITY"].strip(),
         lookback=int(os.environ["LOOKBACK"]),
