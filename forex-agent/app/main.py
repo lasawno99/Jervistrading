@@ -300,9 +300,19 @@ def _register_jobs(scheduler: AsyncIOScheduler, rt: Runtime) -> None:
     # jarvis-synth handles autonomous trading via its own 5-layer pipeline.
     if os.environ.get("AUTONOMOUS_TRADING_ENABLED", "").strip().lower() in ("1", "true", "yes"):
         log.warning("autonomous_trading_enabled")
+        try:
+            alert_trigger = CronTrigger.from_crontab(rt.config.schedule_cron, timezone="UTC")
+        except Exception as e:
+            log.error(
+                "schedule_cron_invalid_using_default",
+                invalid_value=rt.config.schedule_cron,
+                error=str(e),
+                default="*/15 9-21 * * 1-5",
+            )
+            alert_trigger = CronTrigger.from_crontab("*/15 9-21 * * 1-5", timezone="UTC")
         scheduler.add_job(
             _job_alert_scan,
-            trigger=CronTrigger.from_crontab(rt.config.schedule_cron, timezone="UTC"),
+            trigger=alert_trigger,
             kwargs={"rt": rt},
             id="alert_scan",
             max_instances=1,

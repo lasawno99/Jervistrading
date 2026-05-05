@@ -181,9 +181,24 @@ async def main_async() -> None:
         raise
 
     scheduler = AsyncIOScheduler(timezone="UTC")
+
+    # Defensive cron parsing: mobile keyboards mangle cron strings.
+    # If parsing fails, fall back to "0 12 * * 1-5" (noon UTC weekdays) and log it.
+    try:
+        trigger = CronTrigger.from_crontab(cfg.schedule_cron, timezone="UTC")
+        log.info("schedule_cron_parsed", expression=cfg.schedule_cron)
+    except Exception as e:
+        log.error(
+            "schedule_cron_invalid_using_default",
+            invalid_value=cfg.schedule_cron,
+            error=str(e),
+            default="0 12 * * 1-5",
+        )
+        trigger = CronTrigger.from_crontab("0 12 * * 1-5", timezone="UTC")
+
     scheduler.add_job(
         run_pipeline,
-        trigger=CronTrigger.from_crontab(cfg.schedule_cron, timezone="UTC"),
+        trigger=trigger,
         kwargs={
             "cfg": cfg, "fetcher": fetcher, "forecaster": forecaster,
             "scout": scout, "debate": debate, "executor": executor, "bot": bot,
