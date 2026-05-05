@@ -96,6 +96,17 @@ class OandaExecutor:
 
     # Day-start balance bookkeeping ------------------------------------
 
+    def reset_day_baseline(self, new_balance: float) -> None:
+        """Mark the day-starting balance to a new value (used by profit-lock).
+
+        After a profit-lock fires we want the daily-loss-limit calculation to
+        be measured against the new high-water-mark, not the old day-start.
+        """
+        from datetime import datetime, timezone
+        self._day_starting_balance = float(new_balance)
+        self._day_starting_balance_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        log.info("day_starting_balance_reset", new_balance=new_balance)
+
     def _ensure_day_starting_balance(self) -> float:
         from datetime import datetime, timezone
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")

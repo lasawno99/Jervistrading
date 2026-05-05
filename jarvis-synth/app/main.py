@@ -21,6 +21,7 @@ from app.kronos_client import KronosForecaster
 from app.news_scout import NewsScout
 from app.oanda_exec import OandaExecutor
 from app.oanda_fetch import OandaFetcher
+from app.profit_lock import ProfitLock, format_lock_alert
 from app.signal import build_signal
 from app.synth import synthesize
 from app.tauric import TauricDebate
@@ -149,6 +150,42 @@ async def run_pipeline(
             pass
 
 
+async def profit_lock_heartbeat(
+    cfg, executor: OandaExecutor, profit_lock: ProfitLock, bot
+) -> None:
+    """Poll OANDA NAV; lock profits when threshold crossed; alert + reset baseline."""
+    try:
+        summary = await asyncio.to_thread(executor.get_account_summary)
+    except Exception as e:
+        log.error("profit_lock_nav_fetch_failed", error=str(e))
+        return
+
+    nav = float(summary["nav"])
+    event = profit_lock.check_and_lock(nav)
+    if event is None:
+        log.debug(
+            "profit_lock_check",
+            nav=nav,
+            baseline=profit_lock.baseline,
+            total_locked=profit_lock.total_locked,
+        )
+        return
+
+    # Reset day-starting balance so the daily-loss-limit is measured against
+    # the new high-water mark, not the pre-lock NAV.
+    executor.reset_day_baseline(event.baseline_after)
+
+    msg = format_lock_alert(
+        event,
+        total_locked=profit_lock.total_locked,
+        total_wealth=profit_lock.total_wealth(nav),
+    )
+    try:
+        await bot.send_message(chat_id=cfg.telegram_chat_id, text=msg)
+    except Exception as e:
+        log.error("profit_lock_alert_failed", error=str(e))
+
+
 async def main_async() -> None:
     cfg = load_config()
     log.info("config_loaded", instruments=cfg.instruments,
@@ -180,6 +217,27 @@ async def main_async() -> None:
         log.error("kronos_load_failed", error=str(e))
         raise
 
+    # Initialize the profit-lock ledger using current OANDA NAV as the
+    # starting balance hint (only used on first boot when ledger doesn't exist).
+    try:
+        initial_nav = float((await asyncio.to_thread(executor.get_account_summary))["nav"])
+    except Exception as e:
+        log.error("initial_nav_fetch_failed", error=str(e))
+        initial_nav = 100_000.0  # fallback; ledger will correct on first heartbeat
+
+    profit_lock = ProfitLock(
+        path=cfg.profit_lock_ledger_path,
+        threshold_pct=cfg.profit_lock_threshold_pct,
+        starting_balance_hint=initial_nav,
+    )
+    log.info(
+        "profit_lock_initialized",
+        threshold_pct=cfg.profit_lock_threshold_pct,
+        baseline=profit_lock.baseline,
+        total_locked=profit_lock.total_locked,
+        ledger_path=cfg.profit_lock_ledger_path,
+    )
+
     scheduler = AsyncIOScheduler(timezone="UTC")
 
     # Defensive cron parsing: mobile keyboards mangle cron strings.
@@ -207,11 +265,29 @@ async def main_async() -> None:
         max_instances=1,
         coalesce=True,
     )
+
+    # Profit-lock heartbeat: poll NAV every N seconds, fire lock if threshold crossed
+    from apscheduler.triggers.interval import IntervalTrigger
+    scheduler.add_job(
+        profit_lock_heartbeat,
+        trigger=IntervalTrigger(seconds=cfg.profit_lock_check_interval_seconds),
+        kwargs={
+            "cfg": cfg, "executor": executor, "profit_lock": profit_lock, "bot": bot,
+        },
+        id="profit_lock_heartbeat",
+        max_instances=1,
+        coalesce=True,
+    )
     scheduler.start()
     log.info("services_started", jobs=[j.id for j in scheduler.get_jobs()])
 
+    online_msg = (
+        f"🧠 JARVIS Synth online — full 5-layer pipeline armed.\n"
+        f"💰 Profit-lock active at +{cfg.profit_lock_threshold_pct:.1f}% per sweep.\n"
+        f"Baseline: ${profit_lock.baseline:,.2f} · Locked: ${profit_lock.total_locked:,.2f}"
+    )
     try:
-        await _send("🧠 JARVIS Synth online — full 5-layer pipeline armed.")
+        await _send(online_msg)
     except Exception as e:
         log.warning("startup_ping_failed", error=str(e))
 

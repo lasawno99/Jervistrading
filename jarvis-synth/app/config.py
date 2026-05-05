@@ -1,4 +1,8 @@
-"""Boot-time config validation."""
+"""Boot-time configuration: read, validate, and expose env vars.
+
+Fail fast if anything required is missing or wrong.
+Never log secret values; mask them in any debug output.
+"""
 from __future__ import annotations
 
 import os
@@ -19,6 +23,11 @@ REQUIRED = (
     "TRADING_MODE", "MAX_POSITION_UNITS", "DAILY_LOSS_LIMIT_PCT",
     "BASE_POSITION_UNITS", "MIN_RR_RATIO",
 )
+
+# Optional vars (have defaults, never crash if missing)
+PROFIT_LOCK_THRESHOLD_PCT_DEFAULT = "5.0"
+PROFIT_LOCK_LEDGER_PATH_DEFAULT = "/app/data/ledger.json"
+PROFIT_LOCK_CHECK_INTERVAL_SECONDS_DEFAULT = "300"  # 5 min
 
 
 @dataclass(frozen=True)
@@ -43,6 +52,9 @@ class Config:
     daily_loss_limit_pct: float
     base_position_units: int
     min_rr_ratio: float
+    profit_lock_threshold_pct: float
+    profit_lock_ledger_path: str
+    profit_lock_check_interval_seconds: int
 
 
 def load_config() -> Config:
@@ -86,4 +98,16 @@ def load_config() -> Config:
         daily_loss_limit_pct=float(os.environ["DAILY_LOSS_LIMIT_PCT"]),
         base_position_units=int(os.environ["BASE_POSITION_UNITS"]),
         min_rr_ratio=float(os.environ["MIN_RR_RATIO"]),
+        profit_lock_threshold_pct=float(
+            os.environ.get("PROFIT_LOCK_THRESHOLD_PCT", PROFIT_LOCK_THRESHOLD_PCT_DEFAULT)
+        ),
+        profit_lock_ledger_path=os.environ.get(
+            "PROFIT_LOCK_LEDGER_PATH", PROFIT_LOCK_LEDGER_PATH_DEFAULT
+        ).strip(),
+        profit_lock_check_interval_seconds=int(
+            os.environ.get(
+                "PROFIT_LOCK_CHECK_INTERVAL_SECONDS",
+                PROFIT_LOCK_CHECK_INTERVAL_SECONDS_DEFAULT,
+            )
+        ),
     )

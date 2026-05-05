@@ -19,4 +19,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Make /app/data writable & ensure it exists for the profit-lock ledger.
+# Mount a Railway Volume at /app/data to persist the ledger across redeploys.
+RUN mkdir -p /app/data
+
 CMD ["python", "-m", "app.main"]
