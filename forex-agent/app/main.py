@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import signal
 import sys
 from dataclasses import dataclass
@@ -283,7 +284,7 @@ async def _job_health_check(rt: Runtime) -> None:
 
 
 def _register_jobs(scheduler: AsyncIOScheduler, rt: Runtime) -> None:
-    # Daily 8am UTC morning brief
+    # Daily 8am UTC morning brief (dry-run; no orders placed)
     scheduler.add_job(
         _job_morning_brief,
         trigger=CronTrigger(hour=8, minute=0, timezone="UTC"),
@@ -293,15 +294,22 @@ def _register_jobs(scheduler: AsyncIOScheduler, rt: Runtime) -> None:
         coalesce=True,
     )
 
-    # Watched-pair alert scan — driven by SCHEDULE_CRON env (default */15 mkt hrs)
-    scheduler.add_job(
-        _job_alert_scan,
-        trigger=CronTrigger.from_crontab(rt.config.schedule_cron, timezone="UTC"),
-        kwargs={"rt": rt},
-        id="alert_scan",
-        max_instances=1,
-        coalesce=True,
-    )
+    # Autonomous live alert scan — GATED by AUTONOMOUS_TRADING_ENABLED env var.
+    # When false (default), forex-agent is conversation-only and will only
+    # place orders in response to /jarvis commands from the operator.
+    # jarvis-synth handles autonomous trading via its own 5-layer pipeline.
+    if os.environ.get("AUTONOMOUS_TRADING_ENABLED", "").strip().lower() in ("1", "true", "yes"):
+        log.warning("autonomous_trading_enabled")
+        scheduler.add_job(
+            _job_alert_scan,
+            trigger=CronTrigger.from_crontab(rt.config.schedule_cron, timezone="UTC"),
+            kwargs={"rt": rt},
+            id="alert_scan",
+            max_instances=1,
+            coalesce=True,
+        )
+    else:
+        log.info("autonomous_trading_disabled_command_bot_mode")
 
     # Heartbeat / guardrail health check every 60s
     scheduler.add_job(
