@@ -38,6 +38,7 @@ import trading_engine as te
 import telegram_bot as tg
 import forex_agent as fx
 import oanda_client as oa
+import alpaca_client as al
 import jarvis_agent as jv
 import fx_strategies as fxs
 from scheduler import scheduler_loop
@@ -451,35 +452,31 @@ async def forex_price(instrument: str):
     return oa.get_price(instrument)
 
 
-@api_router.get("/broker/summary")
-async def broker_summary():
-    """Unified broker-account widget data: OANDA NAV + locked profits + day-over-day change.
+async def _broker_summary_for(*, broker: str, acct: dict, locked_filter: dict | None = None) -> dict:
+    """Common shape: turn a raw broker account dict into the dashboard payload.
 
-    - Reads OANDA account summary via oanda_client.
-    - Reads locked profits from MongoDB collection ``profit_locks`` (sum of all locked events,
-      0 if empty). jarvis-synth Railway worker can push lock events here in the future.
-    - Records today's NAV in ``nav_snapshots`` (one doc per UTC date) and computes
-      day-over-day delta against the most recent prior snapshot.
+    - ``broker`` is a stable key ("oanda", "alpaca") used for storage attribution.
+    - ``locked_filter`` is the Mongo filter against ``profit_locks`` for this broker.
+      Pass {} (or None) to sum **all** events; pass {"source": "..."} to scope.
     """
-    acct = oa.get_account()
     if "error" in acct:
         return acct
 
-    nav = float(acct.get("nav") or acct.get("balance") or 0.0)
+    nav = float(acct.get("nav") or acct.get("equity") or acct.get("balance") or 0.0)
     balance = float(acct.get("balance") or 0.0)
     unrealized = float(acct.get("unrealized_pl") or 0.0)
     currency = acct.get("currency") or "USD"
     open_positions = int(acct.get("open_position_count") or 0)
     open_trades = int(acct.get("open_trade_count") or 0)
     margin_used = float(acct.get("margin_used") or 0.0)
-    margin_available = float(acct.get("margin_available") or 0.0)
-    source = acct.get("source", "oanda")
+    margin_available = float(acct.get("margin_available") or acct.get("buying_power") or 0.0)
+    source = acct.get("source") or broker
 
-    # Locked profits — pulled from `profit_locks` (jarvis-synth pushes events here when ready)
+    # Locked profits — scoped to this broker via source tag where possible.
     locked_total = 0.0
     locked_events = 0
     try:
-        cursor = db.profit_locks.find({}, {"_id": 0, "amount": 1})
+        cursor = db.profit_locks.find(locked_filter or {}, {"_id": 0, "amount": 1})
         async for ev in cursor:
             locked_total += float(ev.get("amount") or 0.0)
             locked_events += 1
@@ -488,13 +485,13 @@ async def broker_summary():
 
     total_wealth = nav + locked_total
 
-    # Day-over-day NAV: read latest snapshot strictly *before* today, then upsert today's.
+    # Day-over-day NAV: per-broker key in ``nav_snapshots``.
     today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     dod_change = None
     dod_pct = None
     try:
         prev = await db.nav_snapshots.find_one(
-            {"date": {"$lt": today_utc}},
+            {"broker": broker, "date": {"$lt": today_utc}},
             sort=[("date", -1)],
             projection={"_id": 0, "nav": 1, "date": 1},
         )
@@ -503,11 +500,11 @@ async def broker_summary():
             dod_change = nav - prev_nav
             dod_pct = (dod_change / prev_nav * 100.0) if prev_nav else None
 
-        # Upsert today's snapshot (latest NAV wins; the day's "close" will be whatever was last seen)
         await db.nav_snapshots.update_one(
-            {"date": today_utc},
+            {"broker": broker, "date": today_utc},
             {
                 "$set": {
+                    "broker": broker,
                     "date": today_utc,
                     "nav": nav,
                     "balance": balance,
@@ -523,6 +520,7 @@ async def broker_summary():
         logging.warning(f"nav_snapshot persistence failed: {e}")
 
     return {
+        "broker": broker,
         "nav": nav,
         "balance": balance,
         "unrealized_pl": unrealized,
@@ -538,6 +536,72 @@ async def broker_summary():
         "dod_pct": dod_pct,
         "as_of": datetime.now(timezone.utc).isoformat(),
         "source": source,
+    }
+
+
+@api_router.get("/broker/summary")
+async def broker_summary():
+    """Backwards-compat: OANDA forex summary (the original endpoint)."""
+    acct = oa.get_account()
+    # Sum everything *except* alpaca-tagged events for backwards compatibility.
+    locked_filter = {"$or": [{"source": {"$exists": False}}, {"source": {"$ne": "jarvis-synth-alpaca"}}]}
+    return await _broker_summary_for(broker="oanda", acct=acct, locked_filter=locked_filter)
+
+
+@api_router.get("/broker/oanda/summary")
+async def broker_oanda_summary():
+    """OANDA forex broker — paper practice account."""
+    acct = oa.get_account()
+    locked_filter = {"$or": [{"source": {"$exists": False}}, {"source": {"$ne": "jarvis-synth-alpaca"}}]}
+    return await _broker_summary_for(broker="oanda", acct=acct, locked_filter=locked_filter)
+
+
+@api_router.get("/broker/alpaca/summary")
+async def broker_alpaca_summary():
+    """Alpaca multi-asset broker — paper account, stocks + crypto."""
+    acct = al.get_account()
+    pos = al.get_open_positions()
+    if isinstance(pos, dict) and "positions" in pos:
+        acct = {
+            **acct,
+            "open_position_count": pos.get("count") or 0,
+            "open_trade_count": pos.get("count") or 0,
+            "unrealized_pl": pos.get("unrealized_total") or 0.0,
+        }
+    locked_filter = {"source": "jarvis-synth-alpaca"}
+    payload = await _broker_summary_for(broker="alpaca", acct=acct, locked_filter=locked_filter)
+    # Extra Alpaca-only field: per-position breakdown for the dashboard.
+    if isinstance(pos, dict):
+        payload["positions_detail"] = pos.get("positions", [])
+    return payload
+
+
+@api_router.get("/broker/all")
+async def broker_all():
+    """Combined view: OANDA + Alpaca side-by-side, plus a unified Total Wealth."""
+    oanda = await broker_oanda_summary()
+    alpaca = await broker_alpaca_summary()
+
+    def _sum(*vals):
+        return sum(float(v or 0) for v in vals if isinstance(v, (int, float)))
+
+    combined_nav = _sum(oanda.get("nav"), alpaca.get("nav"))
+    combined_locked = _sum(oanda.get("locked_profits"), alpaca.get("locked_profits"))
+    combined_wealth = combined_nav + combined_locked
+    combined_unrealized = _sum(oanda.get("unrealized_pl"), alpaca.get("unrealized_pl"))
+    combined_positions = int((oanda.get("open_positions") or 0) + (alpaca.get("open_positions") or 0))
+    return {
+        "oanda": oanda,
+        "alpaca": alpaca,
+        "combined": {
+            "nav": combined_nav,
+            "locked_profits": combined_locked,
+            "total_wealth": combined_wealth,
+            "unrealized_pl": combined_unrealized,
+            "open_positions": combined_positions,
+            "currency": "USD",
+        },
+        "as_of": datetime.now(timezone.utc).isoformat(),
     }
 
 

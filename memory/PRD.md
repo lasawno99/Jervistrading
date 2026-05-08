@@ -108,6 +108,46 @@ Wires `jarvis-synth` (Railway) → `dashboard` (Emergent) so the live "Locked Pr
    - `DASHBOARD_LOCK_TOKEN=<value of BROKER_LOCK_TOKEN from /app/backend/.env>`
 2. Redeploy. Next time NAV crosses +5%, the dashboard's "Locked Profits" cell updates automatically.
 
+## Multi-Broker Dashboard + Alpaca Worker (2026-05-08, **NEW**)
+
+Dashboard now displays **OANDA forex** and **Alpaca stocks+crypto** side-by-side as separate sections, with a unified Combined Wealth supercard above them.
+
+### New Railway worker: `/app/jarvis-synth-alpaca/`
+- Mirror of `jarvis-synth` with OANDA modules swapped for Alpaca:
+  - `alpaca_fetch.py` — historical bars (crypto + stocks via IEX feed for free tier)
+  - `alpaca_exec.py` — paper-trading executor with bracket SL/TP (stocks) and market orders (crypto)
+- Reuses **all** of Tauric debate, Kronos forecaster, Synth, Risk Guard, Profit-Lock, Daily Summary unchanged.
+- Schedule: `*/30 * * * *` (every 30 min, 24/7) — crypto trades any hour, stock orders rejected outside US RTH (harmless logged rejections).
+- Default instruments: **5 crypto + 5 stocks** — `BTC/USD,ETH/USD,SOL/USD,AVAX/USD,LTC/USD,NVDA,TSLA,AAPL,AMD,META`.
+- **Profit-lock events tagged `source: "jarvis-synth-alpaca"`** so dashboard attributes locks correctly.
+- 27/27 pytest passing, lint clean.
+- Live smoke test: account ACTIVE ($100k cash, $200k buying power), crypto bars + stock IEX bars both streaming.
+
+### Dashboard backend additions (`/app/backend/server.py`)
+- `GET /api/broker/oanda/summary` — OANDA forex (alias of original `/broker/summary`).
+- `GET /api/broker/alpaca/summary` — Alpaca multi-asset, includes `positions_detail[]`.
+- `GET /api/broker/all` — combined view, both brokers + summed `combined.total_wealth`.
+- `nav_snapshots` collection now keyed by `(broker, date)` — DoD per broker.
+- `profit_locks` events filtered by `source` tag for proper attribution.
+- New `alpaca_client.py` module (read-only account + positions reader).
+
+### Dashboard frontend additions
+- `MultiBrokerHero` component: slim Combined Wealth supercard + two stacked broker cards (OANDA violet accent, Alpaca cyan accent), each with full NAV/Locked/Positions/Margin breakdown, DoD pills, live indicators, framer-motion entrance.
+- Refreshes every 15s. One fetch to `/broker/all` powers all three sections.
+
+### Verified live
+- OANDA: $99,991 NAV + $823.95 locked = $100,815 wealth ✓
+- Alpaca: $100,000 NAV (real paper account) ✓
+- Combined: **$200,815.20** total wealth ✓
+
+### User actions to make Alpaca live on Railway
+1. New Railway service → `Root Directory: jarvis-synth-alpaca`
+2. Copy all env vars from `.env.example`, fill in:
+   - `ALPACA_API_KEY` / `ALPACA_SECRET_KEY` (from https://app.alpaca.markets/paper)
+   - `TELEGRAM_BOT_TOKEN` (use a **different bot** than jarvis-synth to avoid 409 conflicts)
+   - `DASHBOARD_LOCK_WEBHOOK_URL` + `DASHBOARD_LOCK_TOKEN` (same as jarvis-synth)
+3. Mount Volume at `/app/data` for ledger persistence.
+
 ## Last session ops checklist
 
 - [x] Tavily key validated against live API

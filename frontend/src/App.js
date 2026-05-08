@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 import { Toaster, toast } from "sonner";
 import JarvisOrb from "@/components/JarvisOrb";
 import CommandPalette from "@/components/CommandPalette";
-import BrokerHeroPanel from "@/components/panels/BrokerHeroPanel";
+import BrokerHeroPanel, { MultiBrokerHero } from "@/components/panels/BrokerHeroPanel";
 import TradingPanel from "@/components/panels/TradingPanel";
 import TwitterPanel from "@/components/panels/TwitterPanel";
 import CalendarPanel from "@/components/panels/CalendarPanel";
@@ -247,7 +247,7 @@ function App() {
 
           {/* Center stage */}
           <section className="col-span-12 lg:col-span-6 flex flex-col gap-6">
-            <BrokerHeroPanel refreshKey={refreshKey} />
+            <MultiBrokerHero refreshKey={refreshKey} />
 
             <motion.div
               className="relative flex flex-col items-center pt-4"
