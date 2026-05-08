@@ -1,104 +1,128 @@
 {
-  "theme": "DARK",
-  "archetype": "7 (Electric & Neon)",
-  "typography": {
-    "fonts": [
-      {
-        "family": "Chakra Petch",
-        "type": "heading",
-        "url": "https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&display=swap",
-        "fallback": "sans-serif"
-      },
-      {
-        "family": "IBM Plex Mono",
-        "type": "body",
-        "url": "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap",
-        "fallback": "monospace"
-      }
-    ],
-    "rules": {
-      "h1": "text-4xl sm:text-5xl lg:text-6xl tracking-tighter font-bold uppercase",
-      "h2": "text-2xl sm:text-3xl lg:text-4xl tracking-tight font-semibold uppercase",
-      "h3": "text-xl sm:text-2xl font-medium",
-      "h4": "text-lg sm:text-xl font-medium",
-      "body": "text-base leading-relaxed font-normal",
-      "small": "text-xs tracking-[0.2em] uppercase"
-    }
+  "theme_archetype": {
+    "domain": "Finance/Trading + AI",
+    "theme": "Dark",
+    "archetype_selected": "Archetype 4 (Swiss & High-Contrast) + Archetype 5 (Jewel & Luxury)",
+    "reasoning": "The user wants a 'Framer style' premium UI (Linear/Vercel aesthetic) replacing a cosplay Iron-Man look. Trading requires absolute data clarity (Archetype 4), while the 'Jarvis' and Framer vibe requires a cinematic, expensive feel (Archetype 5). We use 'Premium Dark Fintech'—deep obsidian backgrounds, glassmorphic cards, crisp monospace numbers, and subtle glowing accents."
   },
-  "colors": {
-    "background": "#050B14",
-    "surface": "rgba(10, 17, 40, 0.6)",
-    "border": "rgba(0, 240, 255, 0.3)",
-    "primary": "#00F0FF",
-    "secondary": "#FF007F",
-    "accent_alert": "#FFB000",
-    "text_primary": "#FFFFFF",
-    "text_secondary": "#8BABC6",
-    "mac_red": "#FF5F56",
-    "mac_yellow": "#FFBD2E",
-    "mac_green": "#27C93F"
-  },
-  "layout": {
-    "grid_strategy": "Control Room layout with immersive 3D background. The UI is split into a left column (panels), a central area (AI Orb + chat input), and a right column (panels).",
-    "spacing": "Dense but legible. Use Tailwind scale: p-2, p-4 for internal widget padding.",
-    "border_radius": "rounded-lg or rounded-xl (subtle, not too pill-shaped to maintain cyberpunk edge).",
-    "panels": {
-      "style": "Glassmorphism (Crystal variant). `backdrop-blur-xl bg-[#0A1128]/60 border border-[#00F0FF]/30 shadow-[0_4px_30px_rgba(0,0,0,0.5)]`",
-      "header": "macOS traffic light dots (red, yellow, green) on the top left, small title on the top right or center.",
-      "hover": "Subtle border glow on hover: `hover:border-[#00F0FF]/60 hover:shadow-[0_0_20px_rgba(0,240,255,0.2)]`"
+  "color_system": {
+    "background": {
+      "app": "#050505",
+      "panel": "rgba(255, 255, 255, 0.02)",
+      "panel_hover": "rgba(255, 255, 255, 0.04)"
     },
-    "z_layers": {
-      "background": 0,
-      "particles_grain": 10,
-      "orb": 20,
-      "panels": 30,
-      "overlays": 50
+    "border": {
+      "default": "rgba(255, 255, 255, 0.08)",
+      "highlight": "rgba(255, 255, 255, 0.15)"
+    },
+    "text": {
+      "primary": "#FFFFFF",
+      "secondary": "rgba(255, 255, 255, 0.5)",
+      "tertiary": "rgba(255, 255, 255, 0.3)"
+    },
+    "accents": {
+      "jarvis_core": "#FFFFFF",
+      "jarvis_aura_1": "#00E5FF",
+      "jarvis_aura_2": "#7B61FF",
+      "trading_up": "#00FF66",
+      "trading_down": "#FF3366",
+      "warning": "#FFB020"
     }
   },
-  "components": {
-    "orb": {
-      "description": "Central glowing AI orb (Jarvis core). Made pure CSS/SVG. Pulse animation based on state (idle, listening, thinking).",
-      "styles": "Multiple concentric circles, drop-shadow, blur filters, rotating dashed SVG borders. Glow color should be primary (#00F0FF)."
+  "typography": {
+    "fonts": {
+      "headings": "Cabinet Grotesk, Outfit, or sans-serif",
+      "body": "Manrope, Geist, or sans-serif",
+      "monospace": "JetBrains Mono, Geist Mono, or monospace"
+    },
+    "hierarchy": {
+      "hero_number": "text-6xl md:text-7xl font-light tracking-tighter",
+      "panel_title": "text-sm uppercase tracking-[0.2em] text-white/50",
+      "body_text": "text-sm text-white/70",
+      "data_label": "text-xs font-mono text-white/40 uppercase",
+      "data_value": "text-lg md:text-xl font-mono text-white tracking-tight"
+    }
+  },
+  "layout_and_spacing": {
+    "global": {
+      "padding": "p-4 md:p-8",
+      "max_width": "max-w-[1600px] mx-auto",
+      "grid": "grid grid-cols-1 md:grid-cols-12 gap-6"
+    },
+    "zones": {
+      "left_sidebar": "md:col-span-3 flex flex-col gap-6",
+      "center_stage": "md:col-span-6 flex flex-col gap-6",
+      "right_sidebar": "md:col-span-3 flex flex-col gap-6"
+    },
+    "panel_spacing": "p-6 flex flex-col gap-4",
+    "border_radius": "rounded-2xl"
+  },
+  "surface_strategies": {
+    "cards": {
+      "style": "Glassmorphic High-Contrast",
+      "classes": "bg-white/[0.02] backdrop-blur-xl border border-white/10 rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] overflow-hidden"
+    },
+    "buttons": {
+      "primary": "bg-white text-black hover:bg-white/90 rounded-full px-6 py-2 text-sm font-medium transition-colors",
+      "secondary": "bg-white/5 text-white hover:bg-white/10 border border-white/10 rounded-full px-6 py-2 text-sm transition-colors",
+      "danger": "bg-[#FF3366]/10 text-[#FF3366] hover:bg-[#FF3366]/20 border border-[#FF3366]/20 rounded-full px-6 py-2 text-sm transition-colors"
+    }
+  },
+  "component_guidelines": {
+    "broker_account_hero": {
+      "location": "Top of center_stage",
+      "description": "The most visually arresting element showing total wealth in OANDA.",
+      "layout": "Flex column, large typography, minimalist.",
+      "elements": {
+        "title": "Uses panel_title format: 'OANDA BROKER ACCOUNT'",
+        "total_wealth": "Uses hero_number format. Must animate with CountUp.",
+        "breakdown": "Row of data showing NAV vs Locked Profits.",
+        "dod_change": "Green/Red glowing badge showing Day-over-Day change ($ and %)."
+      },
+      "classes": "relative p-8 bg-gradient-to-b from-white/[0.05] to-transparent border border-white/10 rounded-3xl"
+    },
+    "jarvis_ai_orb": {
+      "location": "Center of center_stage (between Broker Widget and Trading Panel)",
+      "description": "Premium CSS/Framer Motion orb, replacing the old cyan Iron-Man graphic.",
+      "implementation": "Do not use static images. Build a CSS composition: a perfectly round div (`w-48 h-48`) with `rounded-full`, multiple `box-shadow` layers for inner/outer glow, `backdrop-blur-md`, and a subtle `conic-gradient` spinning inside.",
+      "motion": "Breathing animation (`scale: [1, 1.02, 1]`) idle. When voice active, animate `box-shadow` audio waves."
+    },
+    "trading_panels": {
+      "description": "Live Positions, Signals, and Forex Desk.",
+      "style": "Highly dense, tabular or bento-style data.",
+      "typography": "Use Monospace exclusively for prices, P&L, and sizing.",
+      "positive_state": "text-[#00FF66] font-mono drop-shadow-[0_0_8px_rgba(0,255,102,0.4)]",
+      "negative_state": "text-[#FF3366] font-mono drop-shadow-[0_0_8px_rgba(255,51,102,0.4)]"
     },
     "command_palette": {
-      "description": "Chat input at the bottom center. Glassmorphic, wide, with a microphone button.",
-      "styles": "backdrop-blur-xl bg-[#050B14]/80 border border-[#00F0FF]/50 rounded-full px-6 py-3 flex items-center gap-4"
-    },
-    "traffic_light_header": {
-      "description": "Header for each widget simulating a draggable OS window.",
-      "styles": "flex items-center gap-2 mb-4 border-b border-[#00F0FF]/20 pb-2"
+      "location": "Fixed at bottom center",
+      "description": "Floating glassmorphic pill containing text input and mic toggle.",
+      "classes": "fixed bottom-8 left-1/2 -translate-x-1/2 w-full max-w-2xl bg-[#0a0a0a]/80 backdrop-blur-2xl border border-white/10 rounded-full p-2 flex items-center gap-2 shadow-[0_20px_40px_rgba(0,0,0,0.8)]"
     }
   },
-  "animations": {
-    "orb_pulse": "Keyframes scaling from 0.95 to 1.05 and fading box-shadow intensity.",
-    "panel_entrance": "Staggered fade-in and slight translate-y on load.",
-    "hover_glow": "transition-all duration-300 ease-out"
-  },
-  "assets": {
-    "images": {
-      "background": "https://images.pexels.com/photos/14976666/pexels-photo-14976666.jpeg",
-      "avatars": [
-        "https://images.unsplash.com/photo-1627890458144-4c0c481bf4b8?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjY2NjV8MHwxfHNlYXJjaHwxfHxwcm9maWxlJTIwYXZhdGFyJTIwcG9ydHJhaXQlMjBkYXJrJTIwYmFja2dyb3VuZHxlbnwwfHx8fDE3NzcxNzA0OTB8MA&ixlib=rb-4.1.0&q=85",
-        "https://images.pexels.com/photos/13185150/pexels-photo-13185150.jpeg"
-      ]
+  "motion_interactions": {
+    "page_load": {
+      "stagger": "Framer motion staggered children. Panels slide up (`y: 20`) and fade in (`opacity: 0` to `1`) with a spring transition."
     },
-    "icons": {
-      "library": "lucide-react",
-      "usage": "Use for widget icons, command palette actions, window controls."
+    "numbers": {
+      "counters": "All broker balances and P&L must animate on load using a CountUp hook."
     },
-    "textures": {
-      "grain": "SVG noise filter applied to a fixed full-screen pseudo-element with opacity 0.05 - 0.1 and mix-blend-mode: overlay."
+    "hover_states": {
+      "cards": "Subtle border highlight on hover: `hover:border-white/20 hover:bg-white/[0.04]`."
     }
   },
-  "instructions_to_main_agent": [
-    "Build a single-page immersive AI dashboard.",
-    "Set the background image to cover the full viewport, overlaid with a very dark gradient (`bg-gradient-to-b from-[#050B14]/80 to-[#050B14]/95`) and a subtle grain texture to darken the image and create depth.",
-    "Use Chakra Petch for all headings and widget titles, IBM Plex Mono for data, code, and chat text.",
-    "Create 5-6 distinct draggable/floating style panels: Trading (mock charts/tickers), Twitter/X Feed, Calendar, Task Runner, Social Media.",
-    "Implement the central AI Orb using HTML/CSS/SVG (no WebGL required). Give it a 'listening'/'speaking' pulse animation.",
-    "Ensure all panels have the macOS traffic light buttons (red, yellow, green) in their headers.",
-    "Include a prominent voice-input enabled command palette at the bottom.",
-    "Use the colors specified (electric cyan, magenta, amber) strictly. Do not use generic tailwind blues/purples.",
-    "Add 'data-testid' to all interactive elements."
-  ]
+  "images": {
+    "background_texture": {
+      "url": "https://images.unsplash.com/photo-1714548529197-537c1f0b6aa7?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njl8MHwxfHNlYXJjaHwxfHxkYXJrJTIwYWJzdHJhY3QlMjBnbG93aW5nJTIwc3BoZXJlJTIwM2R8ZW58MHx8fHwxNzc4MjA0NzA5fDA&ixlib=rb-4.1.0&q=85",
+      "description": "Dark abstract minimalist lines. Use this as a very low opacity (10-15%) fixed background behind the app to kill the 'flat color' look."
+    }
+  },
+  "implementation_instructions": {
+    "1_setup": "Install `framer-motion`, `lucide-react`, and use `tailwind-merge` + `clsx` (Shadcn standard).",
+    "2_fonts": "Import a Grotesk (e.g., Cabinet Grotesk or Outfit), a clean Sans (e.g., Manrope), and a Monospace (e.g., JetBrains Mono). Add them to tailwind config under `font-heading`, `font-sans`, and `font-mono`.",
+    "3_globals": "Update `index.css` with the deep dark theme. Set `body { background-color: #050505; color: #FFFFFF; font-family: var(--font-sans); }`",
+    "4_components": "Refactor existing panels to use the 'Glassmorphic High-Contrast' card classes. Remove all old cyan (#00F0FF) borders and replace with subtle white/10 borders.",
+    "5_broker_widget": "Build the new Broker Account Widget exactly as spec'd, giving it the most visual weight.",
+    "6_orb": "Replace the old image-based orb with the CSS/Framer Motion orb."
+  }
 }
