@@ -81,6 +81,33 @@ Full visual overhaul of `/app/frontend` from cyan-Iron-Man-HUD aesthetic to a Fr
 - Frontend: dashboard renders cleanly, Total Wealth animates, all legacy panels still operational.
 - Lint: clean (Python ruff + JS ESLint).
 
+## Profit-Lock Dashboard Webhook (2026-05-08, **NEW**)
+
+Wires `jarvis-synth` (Railway) → `dashboard` (Emergent) so the live "Locked Profits" widget reflects every +5% profit-sweep in real time.
+
+### Backend (dashboard)
+- `POST /api/broker/profit-locks` — accepts `{timestamp, amount, nav_at_lock, baseline_before, baseline_after, source}`. Auth via `X-Lock-Token` header matching env `BROKER_LOCK_TOKEN`. Idempotent: dedupes on `timestamp` (re-posts return `{stored:false, duplicate:true}`). Closed (503) when token env unset — fail-secure.
+- `GET /api/broker/profit-locks` — recent events, newest first, for the dashboard.
+- `GET /api/broker/summary` already sums these into `locked_profits` + `total_wealth`.
+
+### jarvis-synth
+- New `app/dashboard_webhook.py` — async best-effort POST via `httpx`. Errors swallowed, never breaks the trading loop.
+- `app/main.py` `profit_lock_heartbeat` calls it after every successful lock.
+- `app/config.py` adds optional `DASHBOARD_LOCK_WEBHOOK_URL` + `DASHBOARD_LOCK_TOKEN` env vars (skip silently if unset).
+- 5/5 webhook tests pass; total jarvis-synth tests: **27/27 green**.
+
+### Verified end-to-end
+- Auth rejection (no/wrong token) → 401 ✓
+- Valid post → `stored:true` ✓
+- Duplicate timestamp → `duplicate:true` ✓
+- `/broker/summary` reflects `locked_profits=$823.95`, `total_wealth=$100,810.52`, `locked_events=2` after 2 fake POSTs ✓
+
+### User action required for production
+1. On Railway → `jarvis-synth` service → Variables → add:
+   - `DASHBOARD_LOCK_WEBHOOK_URL=https://jarvis-agent-16.preview.emergentagent.com/api/broker/profit-locks`
+   - `DASHBOARD_LOCK_TOKEN=<value of BROKER_LOCK_TOKEN from /app/backend/.env>`
+2. Redeploy. Next time NAV crosses +5%, the dashboard's "Locked Profits" cell updates automatically.
+
 ## Last session ops checklist
 
 - [x] Tavily key validated against live API

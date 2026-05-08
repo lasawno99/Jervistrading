@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi import FastAPI, APIRouter, HTTPException, Request
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -539,6 +539,61 @@ async def broker_summary():
         "as_of": datetime.now(timezone.utc).isoformat(),
         "source": source,
     }
+
+
+class ProfitLockEvent(BaseModel):
+    timestamp: str  # ISO UTC; used as idempotency key
+    amount: float  # locked $ amount (positive)
+    nav_at_lock: Optional[float] = None
+    baseline_before: Optional[float] = None
+    baseline_after: Optional[float] = None
+    source: Optional[str] = "jarvis-synth"
+
+
+@api_router.post("/broker/profit-locks")
+async def broker_post_profit_lock(event: ProfitLockEvent, request: Request):
+    """Webhook for jarvis-synth (and other workers) to POST profit-lock events.
+
+    Auth: X-Lock-Token header must match env BROKER_LOCK_TOKEN. If the env var
+    is unset, the endpoint is closed (returns 503) — fail-secure, no public writes.
+    Idempotency: ``timestamp`` is the unique key; duplicate posts are no-ops.
+    """
+    expected = os.environ.get("BROKER_LOCK_TOKEN", "").strip()
+    if not expected:
+        raise HTTPException(status_code=503, detail="profit-lock webhook disabled (BROKER_LOCK_TOKEN not set)")
+    presented = request.headers.get("x-lock-token", "").strip()
+    if not presented or presented != expected:
+        raise HTTPException(status_code=401, detail="invalid lock token")
+    if event.amount <= 0:
+        raise HTTPException(status_code=400, detail="amount must be > 0")
+
+    doc = {
+        "timestamp": event.timestamp,
+        "amount": float(event.amount),
+        "nav_at_lock": event.nav_at_lock,
+        "baseline_before": event.baseline_before,
+        "baseline_after": event.baseline_after,
+        "source": event.source or "jarvis-synth",
+        "received_at": datetime.now(timezone.utc).isoformat(),
+    }
+    res = await db.profit_locks.update_one(
+        {"timestamp": event.timestamp},
+        {"$setOnInsert": doc},
+        upsert=True,
+    )
+    return {
+        "stored": bool(res.upserted_id),
+        "duplicate": not bool(res.upserted_id),
+        "timestamp": event.timestamp,
+        "amount": float(event.amount),
+    }
+
+
+@api_router.get("/broker/profit-locks")
+async def broker_list_profit_locks(limit: int = 25):
+    """Recent profit-lock events for the dashboard (most recent first)."""
+    cursor = db.profit_locks.find({}, {"_id": 0}).sort("timestamp", -1).limit(int(limit))
+    return {"events": [ev async for ev in cursor]}
 
 
 @api_router.post("/forex/chat")

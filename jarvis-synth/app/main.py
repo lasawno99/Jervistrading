@@ -17,6 +17,7 @@ from telegram import Bot
 
 from app.config import load_config
 from app.daily_report import DailyReport, format_daily_summary
+from app.dashboard_webhook import post_lock_event
 from app.guardrails import GuardrailState
 from app.kronos_client import KronosForecaster
 from app.news_scout import NewsScout
@@ -185,6 +186,21 @@ async def profit_lock_heartbeat(
         await bot.send_message(chat_id=cfg.telegram_chat_id, text=msg)
     except Exception as e:
         log.error("profit_lock_alert_failed", error=str(e))
+
+    # Best-effort: push event to JARVIS dashboard so the live "Locked Profits"
+    # widget reflects this lock. Failure is silently logged; never blocks.
+    try:
+        await post_lock_event(
+            webhook_url=cfg.dashboard_webhook_url,
+            webhook_token=cfg.dashboard_webhook_token,
+            timestamp=event.timestamp,
+            amount=event.locked_amount,
+            nav_at_lock=event.nav_at_lock,
+            baseline_before=event.baseline_before,
+            baseline_after=event.baseline_after,
+        )
+    except Exception as e:
+        log.error("dashboard_webhook_call_failed", error=str(e))
 
 
 async def daily_summary_job(

@@ -55,6 +55,8 @@ class Config:
     profit_lock_threshold_pct: float
     profit_lock_ledger_path: str
     profit_lock_check_interval_seconds: int
+    dashboard_webhook_url: str
+    dashboard_webhook_token: str
 
 
 def load_config() -> Config:
@@ -110,4 +112,8 @@ def load_config() -> Config:
                 PROFIT_LOCK_CHECK_INTERVAL_SECONDS_DEFAULT,
             )
         ),
+        dashboard_webhook_url=os.environ.get("DASHBOARD_LOCK_WEBHOOK_URL", "").strip(),
+        dashboard_webhook_token=_clean("DASHBOARD_LOCK_TOKEN")
+        if os.environ.get("DASHBOARD_LOCK_TOKEN")
+        else "",
     )
