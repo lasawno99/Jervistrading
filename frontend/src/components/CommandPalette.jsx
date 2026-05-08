@@ -27,21 +27,22 @@ export const CommandPalette = ({ onSend, busy, listening, onToggleVoice }) => {
   return (
     <form
       onSubmit={submit}
-      className="jv-panel flex items-center gap-3 px-4 py-3 w-full max-w-3xl"
-      style={{ borderRadius: 999, borderColor: "rgba(0,240,255,0.5)" }}
+      className="flex items-center gap-2 px-2.5 py-2 w-full max-w-2xl bg-[#0a0a0a]/85 backdrop-blur-2xl border border-white/12 rounded-full shadow-[0_20px_40px_rgba(0,0,0,0.7)]"
       data-testid="command-palette"
     >
-      <Sparkles size={16} style={{ color: "#00F0FF" }} />
-      <span className="font-display text-[10px] tracking-[0.4em] uppercase text-[#00F0FF] hidden sm:inline">
-        CMD
-      </span>
+      <div className="flex items-center gap-1.5 pl-2 pr-1">
+        <Sparkles size={14} className="text-white/55" />
+        <span className="font-mono text-[10px] tracking-[0.28em] uppercase text-white/40 hidden sm:inline">
+          ask jarvis
+        </span>
+      </div>
       <input
         ref={inputRef}
         type="text"
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        placeholder={listening ? "// listening..." : "Speak or type a command — ⌘K"}
-        className="flex-1 bg-transparent outline-none text-sm text-white placeholder:text-[#8BABC6] font-mono"
+        placeholder={listening ? "listening…" : "Type or speak — ⌘K"}
+        className="flex-1 bg-transparent outline-none text-sm text-white placeholder:text-white/35 font-sans"
         data-testid="command-input"
         disabled={busy}
       />
@@ -50,9 +51,11 @@ export const CommandPalette = ({ onSend, busy, listening, onToggleVoice }) => {
         onClick={onToggleVoice}
         className="relative w-9 h-9 rounded-full flex items-center justify-center transition-all"
         style={{
-          background: listening ? "rgba(255,0,127,0.18)" : "rgba(0,240,255,0.12)",
-          border: `1px solid ${listening ? "#FF007F" : "rgba(0,240,255,0.5)"}`,
-          color: listening ? "#FF007F" : "#00F0FF",
+          background: listening ? "rgba(255,59,110,0.16)" : "rgba(255,255,255,0.06)",
+          border: `1px solid ${
+            listening ? "rgba(255,59,110,0.6)" : "rgba(255,255,255,0.15)"
+          }`,
+          color: listening ? "var(--jv-down)" : "rgba(255,255,255,0.85)",
         }}
         data-testid="voice-toggle-btn"
         aria-label="Toggle voice"
@@ -62,8 +65,8 @@ export const CommandPalette = ({ onSend, busy, listening, onToggleVoice }) => {
           <span
             className="absolute inset-0 rounded-full"
             style={{
-              border: "1px solid #FF007F",
-              animation: "orb-pulse-fast 1.2s ease-in-out infinite",
+              border: "1px solid rgba(255,59,110,0.7)",
+              animation: "panel-in 1.2s ease-in-out infinite alternate",
             }}
           />
         )}
@@ -73,9 +76,9 @@ export const CommandPalette = ({ onSend, busy, listening, onToggleVoice }) => {
         disabled={busy || !value.trim()}
         className="w-9 h-9 rounded-full flex items-center justify-center transition-all disabled:opacity-40"
         style={{
-          background: "#00F0FF",
-          color: "#050B14",
-          boxShadow: "0 0 18px rgba(0,240,255,0.6)",
+          background: "#fff",
+          color: "#000",
+          boxShadow: "0 0 0 0 rgba(255,255,255,0.0)",
         }}
         data-testid="command-send-btn"
         aria-label="Send"

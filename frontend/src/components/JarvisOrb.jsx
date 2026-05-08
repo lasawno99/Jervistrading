@@ -1,150 +1,120 @@
 import React from "react";
+import { motion } from "framer-motion";
 
-export const JarvisOrb = ({ state = "idle" }) => {
-  const animClass =
-    state === "listening"
-      ? "orb-listening"
-      : state === "thinking"
-      ? "orb-thinking"
-      : "orb-idle";
+/**
+ * CSS-only premium JARVIS orb.
+ * - Layered: outer aura halo · spinning conic ring · glassy core · inner highlight · core dot
+ * - States: idle / listening / thinking — change pace + accent color
+ * - No SVG, no images. All built from gradients + box-shadow.
+ */
+const STATE_COLOR = {
+  idle: { aura: "0, 229, 255", ring: "123, 97, 255", label: "JARVIS · ONLINE" },
+  listening: { aura: "255, 59, 110", ring: "255, 176, 32", label: "LISTENING" },
+  thinking: { aura: "255, 176, 32", ring: "0, 229, 255", label: "PROCESSING" },
+};
 
-  const coreColor =
-    state === "listening" ? "#FF007F" : state === "thinking" ? "#FFB000" : "#00F0FF";
+export const JarvisOrb = ({ state = "idle", size = 220 }) => {
+  const c = STATE_COLOR[state] || STATE_COLOR.idle;
+  const stateClass =
+    state === "listening" ? "orb-listening" : state === "thinking" ? "orb-thinking" : "";
 
   return (
     <div
-      className="relative flex items-center justify-center"
+      className={`relative flex items-center justify-center ${stateClass}`}
+      style={{ width: size, height: size }}
       data-testid="jarvis-orb"
     >
-      {/* Outer rotating dashed ring */}
-      <svg
-        className="absolute orb-ring-3"
-        width="380"
-        height="380"
-        viewBox="0 0 380 380"
-        style={{ filter: "drop-shadow(0 0 8px rgba(0,240,255,0.4))" }}
-      >
-        <circle
-          cx="190"
-          cy="190"
-          r="180"
-          fill="none"
-          stroke={coreColor}
-          strokeOpacity="0.25"
-          strokeWidth="1"
-          strokeDasharray="2 8"
-        />
-      </svg>
-
-      <svg
-        className="absolute orb-ring-2"
-        width="300"
-        height="300"
-        viewBox="0 0 300 300"
-      >
-        <circle
-          cx="150"
-          cy="150"
-          r="142"
-          fill="none"
-          stroke={coreColor}
-          strokeOpacity="0.45"
-          strokeWidth="1"
-          strokeDasharray="20 6 4 6"
-        />
-        {/* tick marks */}
-        {Array.from({ length: 36 }).map((_, i) => (
-          <line
-            key={i}
-            x1="150"
-            y1="6"
-            x2="150"
-            y2={i % 6 === 0 ? "20" : "12"}
-            stroke={coreColor}
-            strokeOpacity={i % 6 === 0 ? "0.7" : "0.3"}
-            strokeWidth="1"
-            transform={`rotate(${i * 10} 150 150)`}
-          />
-        ))}
-      </svg>
-
-      <svg
-        className="absolute orb-ring-1"
-        width="240"
-        height="240"
-        viewBox="0 0 240 240"
-      >
-        <circle
-          cx="120"
-          cy="120"
-          r="112"
-          fill="none"
-          stroke={coreColor}
-          strokeOpacity="0.6"
-          strokeWidth="1.5"
-          strokeDasharray="60 8 4 8"
-        />
-      </svg>
-
-      {/* Glow halo */}
-      <div
-        className={`absolute rounded-full ${animClass}`}
+      {/* Outer aura — soft glow */}
+      <motion.div
+        className="absolute inset-0 rounded-full pointer-events-none"
         style={{
-          width: 200,
-          height: 200,
-          background: `radial-gradient(circle at 50% 50%, ${coreColor}66 0%, ${coreColor}22 35%, transparent 70%)`,
+          background: `radial-gradient(closest-side, rgba(${c.aura},0.25) 0%, rgba(${c.aura},0.10) 45%, transparent 75%)`,
+          filter: "blur(8px)",
+        }}
+        animate={{ scale: [1, 1.06, 1], opacity: [0.7, 1, 0.7] }}
+        transition={{ duration: state === "listening" ? 1.4 : 4.5, repeat: Infinity, ease: "easeInOut" }}
+      />
+
+      {/* Spinning conic ring — outermost ring of light */}
+      <div
+        className="absolute orb-conic rounded-full"
+        style={{
+          width: size * 0.92,
+          height: size * 0.92,
+          padding: 1,
+          background: `conic-gradient(from 0deg, rgba(${c.ring},0) 0deg, rgba(${c.ring},0.55) 90deg, rgba(${c.aura},0.4) 180deg, rgba(${c.ring},0) 360deg)`,
+          WebkitMask: "radial-gradient(transparent 62%, #000 63%)",
+          mask: "radial-gradient(transparent 62%, #000 63%)",
         }}
       />
 
-      {/* Core sphere */}
+      {/* Counter-spin inner ring (very thin) */}
       <div
-        className={`relative rounded-full ${animClass}`}
+        className="absolute orb-conic-rev rounded-full"
         style={{
-          width: 130,
-          height: 130,
-          background: `radial-gradient(circle at 35% 30%, #ffffff 0%, ${coreColor} 35%, #061B33 80%, #02060d 100%)`,
-          boxShadow: `0 0 60px ${coreColor}, inset 0 0 30px ${coreColor}88, inset 0 0 80px #02060d`,
+          width: size * 0.74,
+          height: size * 0.74,
+          padding: 1,
+          background: `conic-gradient(from 180deg, rgba(${c.aura},0) 0deg, rgba(${c.aura},0.45) 60deg, rgba(${c.ring},0.25) 220deg, rgba(${c.aura},0) 360deg)`,
+          WebkitMask: "radial-gradient(transparent 67%, #000 68%)",
+          mask: "radial-gradient(transparent 67%, #000 68%)",
+        }}
+      />
+
+      {/* Glass core */}
+      <div
+        className="relative orb-breathe rounded-full"
+        style={{
+          width: size * 0.62,
+          height: size * 0.62,
+          background: `
+            radial-gradient(circle at 32% 28%, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.05) 25%, transparent 40%),
+            radial-gradient(circle at 50% 50%, rgba(${c.aura},0.6) 0%, rgba(${c.aura},0.18) 35%, rgba(10,10,12,0.95) 75%)
+          `,
+          boxShadow: `
+            0 0 60px rgba(${c.aura},0.5),
+            0 0 120px rgba(${c.ring},0.25),
+            inset 0 0 40px rgba(${c.aura},0.35),
+            inset 0 -30px 60px rgba(0,0,0,0.7)
+          `,
+          backdropFilter: "blur(8px)",
         }}
       >
-        {/* Inner highlight */}
+        {/* Highlight */}
         <div
           className="absolute rounded-full"
           style={{
-            top: "18%",
-            left: "22%",
-            width: "30%",
+            top: "16%",
+            left: "20%",
+            width: "32%",
             height: "20%",
             background:
               "radial-gradient(ellipse at center, rgba(255,255,255,0.55), transparent 70%)",
-            filter: "blur(4px)",
+            filter: "blur(5px)",
           }}
         />
-        {/* Core dot */}
+        {/* Inner core dot */}
         <div
           className="absolute rounded-full"
           style={{
             top: "50%",
             left: "50%",
             transform: "translate(-50%,-50%)",
-            width: 12,
-            height: 12,
-            background: "#02060d",
-            boxShadow: `0 0 24px ${coreColor}, inset 0 0 6px #000`,
+            width: 10,
+            height: 10,
+            background: "#0a0a0a",
+            boxShadow: `0 0 22px rgba(${c.aura},1), inset 0 0 6px #000`,
           }}
         />
       </div>
 
       {/* State label */}
       <div
-        className="absolute -bottom-14 font-display text-xs tracking-[0.4em] uppercase"
-        style={{ color: coreColor, textShadow: `0 0 10px ${coreColor}` }}
+        className="absolute font-mono text-[9px] tracking-[0.42em] uppercase text-white/55"
+        style={{ bottom: -28 }}
         data-testid="orb-state-label"
       >
-        {state === "listening"
-          ? "// LISTENING"
-          : state === "thinking"
-          ? "// PROCESSING"
-          : "// JARVIS · ONLINE"}
+        {c.label}
       </div>
     </div>
   );

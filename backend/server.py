@@ -451,6 +451,96 @@ async def forex_price(instrument: str):
     return oa.get_price(instrument)
 
 
+@api_router.get("/broker/summary")
+async def broker_summary():
+    """Unified broker-account widget data: OANDA NAV + locked profits + day-over-day change.
+
+    - Reads OANDA account summary via oanda_client.
+    - Reads locked profits from MongoDB collection ``profit_locks`` (sum of all locked events,
+      0 if empty). jarvis-synth Railway worker can push lock events here in the future.
+    - Records today's NAV in ``nav_snapshots`` (one doc per UTC date) and computes
+      day-over-day delta against the most recent prior snapshot.
+    """
+    acct = oa.get_account()
+    if "error" in acct:
+        return acct
+
+    nav = float(acct.get("nav") or acct.get("balance") or 0.0)
+    balance = float(acct.get("balance") or 0.0)
+    unrealized = float(acct.get("unrealized_pl") or 0.0)
+    currency = acct.get("currency") or "USD"
+    open_positions = int(acct.get("open_position_count") or 0)
+    open_trades = int(acct.get("open_trade_count") or 0)
+    margin_used = float(acct.get("margin_used") or 0.0)
+    margin_available = float(acct.get("margin_available") or 0.0)
+    source = acct.get("source", "oanda")
+
+    # Locked profits — pulled from `profit_locks` (jarvis-synth pushes events here when ready)
+    locked_total = 0.0
+    locked_events = 0
+    try:
+        cursor = db.profit_locks.find({}, {"_id": 0, "amount": 1})
+        async for ev in cursor:
+            locked_total += float(ev.get("amount") or 0.0)
+            locked_events += 1
+    except Exception:
+        pass
+
+    total_wealth = nav + locked_total
+
+    # Day-over-day NAV: read latest snapshot strictly *before* today, then upsert today's.
+    today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    dod_change = None
+    dod_pct = None
+    try:
+        prev = await db.nav_snapshots.find_one(
+            {"date": {"$lt": today_utc}},
+            sort=[("date", -1)],
+            projection={"_id": 0, "nav": 1, "date": 1},
+        )
+        if prev and prev.get("nav") is not None:
+            prev_nav = float(prev["nav"])
+            dod_change = nav - prev_nav
+            dod_pct = (dod_change / prev_nav * 100.0) if prev_nav else None
+
+        # Upsert today's snapshot (latest NAV wins; the day's "close" will be whatever was last seen)
+        await db.nav_snapshots.update_one(
+            {"date": today_utc},
+            {
+                "$set": {
+                    "date": today_utc,
+                    "nav": nav,
+                    "balance": balance,
+                    "locked_total": locked_total,
+                    "total_wealth": total_wealth,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                },
+                "$setOnInsert": {"opened_nav": nav},
+            },
+            upsert=True,
+        )
+    except Exception as e:
+        logging.warning(f"nav_snapshot persistence failed: {e}")
+
+    return {
+        "nav": nav,
+        "balance": balance,
+        "unrealized_pl": unrealized,
+        "margin_used": margin_used,
+        "margin_available": margin_available,
+        "open_positions": open_positions,
+        "open_trades": open_trades,
+        "currency": currency,
+        "locked_profits": locked_total,
+        "locked_events": locked_events,
+        "total_wealth": total_wealth,
+        "dod_change": dod_change,
+        "dod_pct": dod_pct,
+        "as_of": datetime.now(timezone.utc).isoformat(),
+        "source": source,
+    }
+
+
 @api_router.post("/forex/chat")
 async def forex_chat(req: ForexChatRequest):
     session_id = req.session_id or str(uuid.uuid4())

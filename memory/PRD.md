@@ -59,6 +59,28 @@ Each service pastes its own env vars. Credentials can be shared (same Anthropic/
 - **P2:** knowledge-arb v2 — add Reddit + Google Trends as secondary signals beyond Tavily.
 - **P2:** Shared MongoDB so kill-switch / cooldown / daily-halt state survives Railway redeploys.
 
+## Dashboard Redesign — Premium Dark Fintech (2026-05-08, **NEW**)
+
+Full visual overhaul of `/app/frontend` from cyan-Iron-Man-HUD aesthetic to a Framer-style premium dark fintech UI (Linear / Vercel / Arc-feel).
+
+### What changed
+- **New theme** (`src/index.css`): obsidian #050505 background, glassmorphic white/[0.02] cards with white/10 borders, subtle aura gradients (`--jv-aura-1` cyan, `--jv-aura-2` violet). Up=#00ff85, Down=#ff3b6e. Fonts: Outfit (heading) / Manrope (sans) / JetBrains Mono (mono). Replaced cyan scanlines with subtle grain only.
+- **New JARVIS Orb** (`src/components/JarvisOrb.jsx`): CSS-only — layered radial-gradients + spinning conic-gradient rings + framer-motion breathing. No SVGs/images. State-aware (idle / listening / thinking).
+- **New Broker Hero widget** (`src/components/panels/BrokerHeroPanel.jsx`): hero number (Total Wealth = NAV + Locked Profits), animated CountUp, glowing DoD badge, breakdown grid (Live NAV / Locked Profits / Open Positions / Margin Used), live indicator. Auto-refreshes every 15s.
+- **New backend endpoint** `GET /api/broker/summary` (`backend/server.py`): unified payload — OANDA NAV/balance/unrealized/margin + locked profits sum from MongoDB collection `profit_locks` + day-over-day delta from `nav_snapshots` (auto-upserted on every call).
+- **Refactored shells**: `Panel.jsx` (glassmorphic, no traffic-light dots, framer-motion entrance), `CommandPalette.jsx` (floating glassmorphic pill at bottom), `App.js` (cleaner header, broker hero front-and-center, orb below, asymmetric 3-12 sidebar grid).
+- **Dependency added**: `framer-motion@12.38.0`.
+
+### Data flow for the broker widget
+- Real-time NAV polled from OANDA Practice via `oanda_client.get_account()`.
+- `nav_snapshots` collection seeds today's row on first hit; tomorrow the DoD badge fills in automatically.
+- `profit_locks` collection is empty for now; jarvis-synth Railway worker can POST events to it to make Locked Profits live.
+
+### Verified working
+- Backend: `curl /api/broker/summary` returns real OANDA data ($99,986.57 NAV).
+- Frontend: dashboard renders cleanly, Total Wealth animates, all legacy panels still operational.
+- Lint: clean (Python ruff + JS ESLint).
+
 ## Last session ops checklist
 
 - [x] Tavily key validated against live API
