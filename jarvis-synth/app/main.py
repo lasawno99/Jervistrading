@@ -16,6 +16,7 @@ from apscheduler.triggers.cron import CronTrigger
 from telegram import Bot
 
 from app.config import load_config
+from app.daily_report import DailyReport, format_daily_summary
 from app.guardrails import GuardrailState
 from app.kronos_client import KronosForecaster
 from app.news_scout import NewsScout
@@ -311,6 +312,19 @@ async def main_async() -> None:
             "cfg": cfg, "executor": executor, "profit_lock": profit_lock, "bot": bot,
         },
         id="profit_lock_heartbeat",
+        max_instances=1,
+        coalesce=True,
+    )
+
+    # Daily summary: 23:55 UTC every day — captures end-of-day NAV before midnight rollover
+    scheduler.add_job(
+        daily_summary_job,
+        trigger=CronTrigger.from_crontab("55 23 * * *", timezone="UTC"),
+        kwargs={
+            "cfg": cfg, "executor": executor, "profit_lock": profit_lock,
+            "daily_report": daily_report, "bot": bot,
+        },
+        id="daily_summary",
         max_instances=1,
         coalesce=True,
     )

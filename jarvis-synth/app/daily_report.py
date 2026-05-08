@@ -145,6 +145,12 @@ class DailyReport:
             return snap
 
 
+def _signed_money(val: float) -> str:
+    """Format as '+$500.00' or '-$500.00' (sign before $, never '$+')."""
+    sign = "+" if val >= 0 else "-"
+    return f"{sign}${abs(val):,.2f}"
+
+
 def format_daily_summary(
     snap: DailySnapshot, hist: DailyHistory, current_nav: float
 ) -> str:
@@ -173,12 +179,12 @@ def format_daily_summary(
         f"📊 *Daily Summary — {snap.date}*\n"
         f"\n"
         f"━━ TODAY ━━\n"
-        f"{delta_today_arrow} P&L: *${snap.realized_today:+,.2f}* ({delta_today_pct:+.2f}%)\n"
+        f"{delta_today_arrow} P&L: *{_signed_money(snap.realized_today)}* ({delta_today_pct:+.2f}%)\n"
         f"NAV: ${snap.nav_open:,.2f} → ${snap.nav_close:,.2f}\n"
         f"Open positions: {snap.open_positions}\n"
         f"\n"
         f"━━ THIS WEEK ━━\n"
-        f"{week_arrow} 7-day P&L: *${week_total:+,.2f}*\n"
+        f"{week_arrow} 7-day P&L: *{_signed_money(week_total)}*\n"
         f"\n"
         f"━━ ALL-TIME ━━\n"
         f"Inception: {hist.inception_date}  ({days_active} days active)\n"
@@ -186,6 +192,6 @@ def format_daily_summary(
         f"Current NAV: ${current_nav:,.2f}\n"
         f"Locked profits: ${snap.total_locked:,.2f}\n"
         f"Total wealth: *${snap.total_wealth:,.2f}*\n"
-        f"{inception_arrow} Total return: *${inception_total:+,.2f}* ({inception_pct:+.2f}%)\n"
-        f"Avg daily: ${avg_daily:+,.2f}"
+        f"{inception_arrow} Total return: *{_signed_money(inception_total)}* ({inception_pct:+.2f}%)\n"
+        f"Avg daily: {_signed_money(avg_daily)}"
     )

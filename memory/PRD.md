@@ -69,3 +69,30 @@ Each service pastes its own env vars. Credentials can be shared (same Anthropic/
 - [ ] forex-agent Railway deploy green (blocked on user re-pasting token)
 - [ ] kronos-agent Railway deploy
 - [ ] knowledge-arb Railway deploy
+
+## jarvis-synth (5-layer autonomous trader, on Railway)
+
+5-layer pipeline: News+Macro → Tauric 7-agent debate → Kronos ML → JARVIS Synth → Risk Guard + OANDA exec. Paper-only on OANDA practice. Uses second bot to avoid 409 conflicts with `forex-agent` polling.
+
+### Profit-Lock (2026-05-07)
+- Polls OANDA NAV every `PROFIT_LOCK_CHECK_INTERVAL_SECONDS`. When NAV ≥ baseline × (1+threshold%), locks the gain into `data/ledger.json`, resets baseline to new high-water mark, sends Telegram alert. Daily-loss-limit baseline is reset alongside so locks don't trigger flat-day halts.
+- Default threshold 5% per sweep. Tested in `tests/test_profit_lock.py` (8/8 passing).
+
+### Daily Summary Report (2026-05-08, **NEW**)
+- `app/daily_report.py` — persistent daily snapshot tracker at `data/daily_history.json`. Inception balance fixed at first boot.
+- Snapshot fields: `nav_open`, `nav_close`, `realized_today`, `open_positions`, `total_locked`, `total_wealth`.
+- Telegram message renders 3 sections: **TODAY** (P&L + NAV delta), **THIS WEEK** (rolling 7-day), **ALL-TIME** (inception → today, days active, locked profits, total wealth, total return %, avg daily).
+- **Scheduled:** `55 23 * * *` UTC (daily, 5 min before midnight rollover) via APScheduler.
+- 6/6 tests passing in `tests/test_daily_report.py`. Total jarvis-synth tests: **22/22 green**, lint clean.
+
+## Backlog (refreshed 2026-05-08)
+
+- **P0 user action:** Save to GitHub → Railway redeploys jarvis-synth with the daily-summary feature.
+- **P1:** Binance public API for 24/7 crypto paper-testing (OANDA practice has no crypto instruments).
+- **P1:** Watch Moonshot Kimi balance — fallback chat/signal in dashboard returns 429 when low.
+- **P2:** Scale jarvis-synth from 5 → 10 instruments after win-rate validation.
+- **P2:** MT4/MT5 Windows VPS + Cloudflare tunnel (deferred).
+- **P2:** Per-service bots if signal channels get noisy.
+- **P2:** Shared MongoDB so kill-switch / cooldown / daily-halt state survives Railway redeploys.
+- **P2:** Kronos upgrade to `Kronos-base` on GPU host.
+- **P2:** knowledge-arb v2 — add Reddit + Google Trends.
