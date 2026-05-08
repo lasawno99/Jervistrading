@@ -186,6 +186,32 @@ async def profit_lock_heartbeat(
         log.error("profit_lock_alert_failed", error=str(e))
 
 
+async def daily_summary_job(
+    cfg, executor: OandaExecutor, profit_lock: ProfitLock,
+    daily_report: DailyReport, bot
+) -> None:
+    """End-of-UTC-day snapshot + summary post to Telegram."""
+    try:
+        summary = await asyncio.to_thread(executor.get_account_summary)
+        positions = await asyncio.to_thread(executor.list_positions)
+    except Exception as e:
+        log.error("daily_summary_fetch_failed", error=str(e))
+        return
+
+    nav = float(summary["nav"])
+    snap = daily_report.record_snapshot(
+        nav_close=nav,
+        open_positions=len(positions),
+        total_locked=profit_lock.total_locked,
+    )
+    msg = format_daily_summary(snap, daily_report._history, current_nav=nav)
+    try:
+        await bot.send_message(chat_id=cfg.telegram_chat_id, text=msg)
+        log.info("daily_summary_sent")
+    except Exception as e:
+        log.error("daily_summary_send_failed", error=str(e))
+
+
 async def main_async() -> None:
     cfg = load_config()
     log.info("config_loaded", instruments=cfg.instruments,
@@ -236,6 +262,16 @@ async def main_async() -> None:
         baseline=profit_lock.baseline,
         total_locked=profit_lock.total_locked,
         ledger_path=cfg.profit_lock_ledger_path,
+    )
+
+    daily_report = DailyReport(
+        path=cfg.profit_lock_ledger_path.replace("ledger.json", "daily_history.json"),
+        inception_balance_hint=initial_nav,
+    )
+    log.info(
+        "daily_report_initialized",
+        inception=daily_report.inception_date,
+        snapshots=len(daily_report.snapshots),
     )
 
     scheduler = AsyncIOScheduler(timezone="UTC")
