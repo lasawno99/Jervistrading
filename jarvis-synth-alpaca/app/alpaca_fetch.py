@@ -119,7 +119,13 @@ class AlpacaFetcher:
         for col in ("open", "high", "low", "close", "volume"):
             if col not in df.columns:
                 raise RuntimeError(f"alpaca bars missing column {col!r} for {symbol}")
-        out = df[["timestamp", "open", "high", "low", "close", "volume"]].copy()
+        # Kronos expects an `amount` column (turnover = price * volume).
+        # Alpaca's bars don't include it for either crypto or stocks (IEX feed),
+        # so synthesize it as close * volume — the standard fallback used by the
+        # Kronos demo notebooks when an exchange omits dollar-volume.
+        if "amount" not in df.columns:
+            df["amount"] = df["close"] * df["volume"]
+        out = df[["timestamp", "open", "high", "low", "close", "volume", "amount"]].copy()
         out = out.tail(count).reset_index(drop=True)
         log.info(
             "alpaca_candles_fetched",
