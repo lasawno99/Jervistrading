@@ -217,6 +217,38 @@ Complete UI redesign per user-provided mockup + brief. Replaced the terminal/cyb
 - **Bottom padding**: `pb-52 lg:pb-36` so tables don't get eaten by the floating Ask bar + Bottom Nav stack on mobile.
 - Verified at 393×852 (iPhone 14 Pro size): hero row reads cleanly, all touch targets ≥36px.
 
+## Pipeline Hardening + Status Sidecar (2026-05-18, **NEW**)
+
+Inspired by QuantAgent paper. Added three pre-execution filters that veto weak setups, plus a read-only HTTP sidecar for real-time diagnostics. Applied to **both** `jarvis-synth` (OANDA forex) and `jarvis-synth-alpaca` (multi-asset).
+
+### Pipeline upgrades (`app/filters.py`)
+
+**Layer 4b — runs after Tauric+Synth, before broker execution.** Three gate-style filters; any failure downgrades the decision to HOLD with structured rationale logged.
+
+1. **Multi-Timeframe Trend** (`mtf_trend_filter`) — EMA-20 slope on 4H/1H/15M; require ≥2 of 3 agree on direction. (Wired but skipped until fetcher supports multi-frame retrieval.)
+2. **Indicator Confluence** (`indicator_confluence`) — RSI, MACD histogram, BB-position must align with proposed direction. LONG requires RSI 45-75 (trend zone, not exhausted), MACD>0, BB pos ≥0.40. SHORT mirror.
+3. **Session Filter** (`session_filter`) — Forex: skip weekends + Asia overnight (UTC <08 or ≥18); Crypto: skip Sun 00-04 UTC (lowest weekly volume); Stocks: pass-through (broker enforces RTH).
+
+### Synth threshold bumps
+- Confidence floor raised from **5 → 7** (Tauric must hit ≥7/10 to proceed; was ≥5)
+- R:R bracket tightened: `9+ → 3.0`, `7-8 → 2.5`, `<7 → 2.0` (was 2.5/2.0/1.5). **Minimum 2.0 always** so 35% win-rate still positive expectancy.
+
+### Status sidecar (`app/status_server.py`, `app/cycle_log.py`)
+FastAPI app on `STATUS_API_PORT` (default 8080), runs in a daemon thread alongside APScheduler:
+- `GET /health` — worker metadata, last cycle ts, scheduler state, account summary
+- `GET /cycles?limit=N` — last N pipeline decisions from JSONL ring buffer (`/app/data/cycle_log.jsonl`)
+- `GET /trades?limit=N` — currently open positions from broker
+- **Auth**: `X-Status-Token` header matches env `STATUS_API_TOKEN`. Open mode if token unset.
+- Persists across restarts via mounted Railway volume.
+
+### Tests
+44/44 passing on both workers (was 27 → +17 filter tests). Coverage: MTF agreement/conflict/HOLD, indicator alignment with trend, session windows for forex/crypto, auto-detection of asset kind.
+
+### Verified
+- Status sidecar smoke test: `/health`, `/cycles`, `/trades` all return real data
+- Token gating: 401 on missing/wrong token, 200 on correct
+- Filter rejection logging structured cleanly for the cycle log
+
 ## Last session ops checklist
 
 - [x] Tavily key validated against live API

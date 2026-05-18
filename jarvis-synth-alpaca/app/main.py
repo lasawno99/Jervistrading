@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import signal as pysignal
 import sys
 
@@ -20,13 +21,16 @@ from telegram import Bot
 from app.alpaca_exec import AlpacaExecutor
 from app.alpaca_fetch import AlpacaFetcher
 from app.config import load_config
+from app.cycle_log import default_log as default_cycle_log
 from app.daily_report import DailyReport, format_daily_summary
 from app.dashboard_webhook import post_lock_event
+from app.filters import run_pre_tauric_filters
 from app.guardrails import GuardrailState
 from app.kronos_client import KronosForecaster
 from app.news_scout import NewsScout
 from app.profit_lock import ProfitLock, format_lock_alert
 from app.signal import build_signal
+from app.status_server import build_app as build_status_app, start_in_thread as start_status_server
 from app.synth import synthesize
 from app.tauric import TauricDebate
 
@@ -61,7 +65,7 @@ def format_decision(instrument: str, decision, kronos_sig) -> str:
 
 
 async def run_pipeline(
-    cfg, fetcher, forecaster, scout, debate, executor, bot
+    cfg, fetcher, forecaster, scout, debate, executor, bot, cycle_log=None
 ) -> None:
     log.info("pipeline_tick_start", instruments=cfg.instruments)
     macro = await asyncio.to_thread(scout.gather, cfg.instruments)
@@ -118,6 +122,50 @@ async def run_pipeline(
         log.info("layer4_decision", instrument=instrument,
                  action=decision.action, units=decision.units)
 
+        # Layer 4b: Pre-execution filters — multi-TF trend (skipped here; single-TF
+        # data only), indicator confluence, session/volatility. Reject weak setups.
+        filter_records = []
+        if decision.action in ("LONG", "SHORT"):
+            allowed, filter_records = run_pre_tauric_filters(
+                instrument=instrument,
+                proposed_direction=decision.action,
+                primary_bars=hist,
+                mtf_bars=None,
+                asset_kind="auto",  # Alpaca trades crypto + stocks
+            )
+            if not allowed:
+                rejection_reason = "; ".join(
+                    r["reason"] for r in filter_records if not r["allowed"]
+                )
+                log.info(
+                    "layer4b_filter_rejected",
+                    instrument=instrument,
+                    action_proposed=decision.action,
+                    reason=rejection_reason,
+                )
+                decision = decision.__class__(
+                    action="HOLD",
+                    units=0,
+                    reasoning=f"Filter veto: {rejection_reason}",
+                ) if hasattr(decision, "__class__") else decision
+
+        if cycle_log is not None:
+            try:
+                cycle_log.append({
+                    "instrument": instrument,
+                    "action": decision.action,
+                    "units": decision.units,
+                    "tauric_verdict": verdict.verdict,
+                    "tauric_confidence": verdict.confidence,
+                    "kronos_direction": kronos_sig.direction,
+                    "kronos_confidence": kronos_sig.confidence,
+                    "kronos_upside_prob": round(kronos_sig.upside_prob, 3),
+                    "reasoning": (decision.reasoning or "")[:240],
+                    "filters": filter_records,
+                })
+            except Exception as e:
+                log.error("cycle_log_write_failed", error=str(e))
+
         # Telegram report (every cycle, regardless of action)
         try:
             await bot.send_message(
@@ -131,8 +179,9 @@ async def run_pipeline(
         if decision.action == "HOLD":
             continue
         side = "buy" if decision.action == "LONG" else "sell"
-        # Conviction-based R:R: confidence 9-10 → 2.5:1, 7-8 → 2:1, 5-6 → 1.5:1
-        rr = 2.5 if verdict.confidence >= 9 else (2.0 if verdict.confidence >= 7 else 1.5)
+        # Tightened R:R — minimum 2.0 (was 1.5). For Alpaca crypto the sl_pips
+        # value is interpreted as a percent of price, so 1.0 = 1% SL distance.
+        rr = 3.0 if verdict.confidence >= 9 else (2.5 if verdict.confidence >= 7 else 2.0)
         result = await asyncio.to_thread(
             executor.execute,
             instrument=instrument,
@@ -295,6 +344,39 @@ async def main_async() -> None:
         snapshots=len(daily_report.snapshots),
     )
 
+    # Read-only status sidecar (HTTP) for diagnostics.
+    cycle_log = default_cycle_log()
+
+    def _status_get():
+        try:
+            summary = executor.get_account_summary()
+        except Exception as e:
+            summary = {"error": str(e)}
+        return {
+            "instruments": cfg.instruments,
+            "schedule_cron": cfg.schedule_cron,
+            "kronos_size": cfg.kronos_size,
+            "profit_lock_baseline": profit_lock.baseline,
+            "profit_lock_total_locked": profit_lock.total_locked,
+            "account": summary,
+        }
+
+    def _status_trades(limit: int):
+        try:
+            positions = executor.list_positions()
+        except Exception:
+            positions = []
+        return {"open_positions": positions[:limit]}
+
+    status_app = build_status_app(
+        worker_name="jarvis-synth-alpaca",
+        cycle_log=cycle_log,
+        get_status=_status_get,
+        get_trades=_status_trades,
+    )
+    status_port = int(os.environ.get("STATUS_API_PORT", "8080"))
+    start_status_server(status_app, host="0.0.0.0", port=status_port)
+
     scheduler = AsyncIOScheduler(timezone="UTC")
 
     # Defensive cron parsing: mobile keyboards mangle cron strings.
@@ -317,6 +399,7 @@ async def main_async() -> None:
         kwargs={
             "cfg": cfg, "fetcher": fetcher, "forecaster": forecaster,
             "scout": scout, "debate": debate, "executor": executor, "bot": bot,
+            "cycle_log": cycle_log,
         },
         id="full_pipeline",
         max_instances=1,
@@ -364,7 +447,7 @@ async def main_async() -> None:
 
     # Kick one cycle immediately
     asyncio.create_task(
-        run_pipeline(cfg, fetcher, forecaster, scout, debate, executor, bot)
+        run_pipeline(cfg, fetcher, forecaster, scout, debate, executor, bot, cycle_log)
     )
 
     stop_event = asyncio.Event()

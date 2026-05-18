@@ -104,3 +104,41 @@ def get_open_positions() -> Dict[str, Any]:
         "unrealized_total": unrealized_total,
         "source": "alpaca",
     }
+
+
+def get_recent_fills(limit: int = 50) -> Dict[str, Any]:
+    """Recent FILL activities from Alpaca's account activity feed.
+
+    Returns one row per fill (buy or sell). Alpaca FILL events don't pair
+    open+close themselves, so we report each leg with its side+qty+price.
+    P/L pairing happens client-side (or by joining symbol round-trips).
+    """
+    if not is_configured():
+        return {"fills": [], "source": "mock"}
+    data = _request(
+        "GET", "/v2/account/activities",
+        params={"activity_types": "FILL", "page_size": int(limit)},
+    )
+    if isinstance(data, dict) and "error" in data:
+        return data
+    out: List[Dict[str, Any]] = []
+    for a in data or []:
+        try:
+            qty = float(a.get("qty") or 0)
+            price = float(a.get("price") or 0)
+            side = (a.get("side") or "").lower()
+            out.append({
+                "id": a.get("id"),
+                "ts": a.get("transaction_time") or a.get("date"),
+                "symbol": a.get("symbol"),
+                "side": side,
+                "qty": qty,
+                "price": price,
+                "notional": round(qty * price, 2),
+                "order_id": a.get("order_id"),
+                "type": a.get("type"),  # 'fill' | 'partial_fill'
+                "broker": "alpaca",
+            })
+        except Exception:
+            continue
+    return {"fills": out, "source": "alpaca"}

@@ -735,11 +735,21 @@ async def dashboard_hero():
     invested = total_equity - total_cash
     exposure_pct = max(0.0, min(100.0, (invested / total_equity * 100.0) if total_equity > 0 else 0.0))
 
-    # Win rate from sim's closed trades, or null if no data
+    # Win rate from sim's closed trades + OANDA history, or null if no data
     try:
         closed = await db.closed_trades.find({}, {"_id": 0, "pl": 1}).to_list(500)
         wins = sum(1 for t in closed if float(t.get("pl") or 0) > 0)
         total = len(closed)
+        # Also fold in OANDA closed trades when available
+        try:
+            oa_hist = oa.get_trade_history(count=200)
+            for t in oa_hist.get("trades") or []:
+                pl = float(t.get("realized_pl") or 0)
+                if pl > 0:
+                    wins += 1
+                total += 1
+        except Exception:
+            pass
         win_rate = (wins / total * 100.0) if total > 0 else None
     except Exception:
         win_rate = None
@@ -860,33 +870,99 @@ async def dashboard_peers():
 async def dashboard_recent_trades(limit: int = 8):
     """Recent fills across all brokers + sim, newest first.
 
-    Pulls from `equity_curve` events tagged as trades + closed_trades; falls back
-    to inferring from open positions if neither exists.
+    Merges three sources:
+      1. ``closed_trades`` collection (sim sells write here on every position close)
+      2. OANDA closed trades via ``oanda_client.get_trade_history()`` (REST)
+      3. Alpaca FILL activities via ``alpaca_client.get_recent_fills()`` (REST)
+
+    Each row is normalized to: {ts, symbol, side, qty, pl?, pl_pct?, broker}.
+    OANDA + sim rows have realized P/L; Alpaca FILL rows are per-leg (no pairing).
     """
+    rows: list[dict] = []
+
+    # 1) Sim — already in MongoDB
     try:
-        docs = await db.closed_trades.find({}, {"_id": 0}).sort("ts", -1).to_list(int(limit))
-        if docs:
-            return {"trades": docs}
+        sim = await db.closed_trades.find({}, {"_id": 0}).sort("ts", -1).to_list(int(limit) * 2)
+        for t in sim:
+            rows.append({
+                "ts": t.get("ts"),
+                "symbol": t.get("symbol"),
+                "side": (t.get("side") or "").lower(),
+                "qty": float(t.get("qty") or 0),
+                "entry": float(t.get("entry") or 0),
+                "exit": float(t.get("exit") or 0),
+                "pl": float(t.get("pl") or 0),
+                "pl_pct": float(t.get("pl_pct") or 0),
+                "broker": t.get("broker") or "sim",
+            })
     except Exception:
         pass
 
-    # Fallback: synthesize from current open positions
-    eq = await te.compute_equity(db)
-    positions = eq.get("positions") or []
-    trades = []
-    for p in positions[: int(limit)]:
-        pl = float(p.get("pl") or 0)
-        trades.append({
-            "ts": p.get("opened_at") or datetime.now(timezone.utc).isoformat(),
-            "symbol": p.get("symbol"),
-            "side": "buy" if float(p.get("qty") or 0) > 0 else "sell",
-            "qty": float(p.get("qty") or 0),
-            "entry": float(p.get("entry") or 0),
-            "pl": pl,
-            "pl_pct": float(p.get("pl_pct") or 0),
-            "source": "sim",
-        })
-    return {"trades": trades}
+    # 2) OANDA — closed trades with realized P/L
+    try:
+        hist = oa.get_trade_history(count=int(limit) * 2)
+        for t in hist.get("trades") or []:
+            entry = float(t.get("price") or 0)
+            exit_px = float(t.get("average_close_price") or 0)
+            units = float(t.get("initial_units") or 0)
+            pl = float(t.get("realized_pl") or 0)
+            pl_pct = (((exit_px - entry) / entry) * 100.0 * (1 if units > 0 else -1)) if entry else 0.0
+            rows.append({
+                "ts": t.get("close_time") or t.get("open_time"),
+                "symbol": t.get("instrument"),
+                "side": "buy" if units > 0 else "sell",
+                "qty": abs(units),
+                "entry": entry,
+                "exit": exit_px,
+                "pl": pl,
+                "pl_pct": round(pl_pct, 4),
+                "broker": "oanda",
+            })
+    except Exception as e:
+        logging.warning(f"oanda trade history fetch failed: {e}")
+
+    # 3) Alpaca — FILL activities (per-leg; no built-in pairing)
+    try:
+        fills = al.get_recent_fills(limit=int(limit) * 2)
+        for f in fills.get("fills") or []:
+            rows.append({
+                "ts": f.get("ts"),
+                "symbol": f.get("symbol"),
+                "side": f.get("side"),
+                "qty": float(f.get("qty") or 0),
+                "entry": None,
+                "exit": float(f.get("price") or 0),
+                "pl": None,  # unpaired
+                "pl_pct": None,
+                "broker": "alpaca",
+            })
+    except Exception as e:
+        logging.warning(f"alpaca fills fetch failed: {e}")
+
+    # Sort newest first; tolerate string-isoformat or None ts
+    def _key(r):
+        return r.get("ts") or ""
+    rows.sort(key=_key, reverse=True)
+
+    if not rows:
+        # Cold-start fallback: synthesize from current open positions
+        eq = await te.compute_equity(db)
+        positions = eq.get("positions") or []
+        for p in positions[: int(limit)]:
+            pl = float(p.get("pl") or 0)
+            rows.append({
+                "ts": p.get("opened_at") or datetime.now(timezone.utc).isoformat(),
+                "symbol": p.get("symbol"),
+                "side": "buy" if float(p.get("qty") or 0) > 0 else "sell",
+                "qty": float(p.get("qty") or 0),
+                "entry": float(p.get("entry") or 0),
+                "exit": None,
+                "pl": pl,
+                "pl_pct": float(p.get("pl_pct") or 0),
+                "broker": "sim",
+            })
+
+    return {"trades": rows[: int(limit)], "sources": ["sim", "oanda", "alpaca"]}
 
 
 @api_router.get("/dashboard/open-positions")

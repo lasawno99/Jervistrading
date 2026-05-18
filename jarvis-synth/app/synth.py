@@ -63,15 +63,16 @@ def synthesize(
     kronos: KronosSignal,
     base_units: int,
 ) -> FinalDecision:
-    # Confidence floor
-    if tauric.confidence < 5 or kronos.confidence == "low":
+    # Confidence floor — tightened (was 5 / low) to lift win-rate.
+    # Now requires Tauric ≥ 7/10 AND Kronos confidence is not "low".
+    if tauric.confidence < 7 or kronos.confidence == "low":
         return FinalDecision(
             action="HOLD",
             units=0,
             reasoning=(
-                f"Confidence floor: Tauric={tauric.verdict}/{tauric.confidence}, "
+                f"Confidence floor (>=7): Tauric={tauric.verdict}/{tauric.confidence}, "
                 f"Kronos={kronos.direction}/{kronos.confidence}. "
-                "At least one layer is below threshold — skip."
+                "Below threshold — skip."
             ),
             tauric_verdict=tauric.verdict,
             tauric_confidence=tauric.confidence,
