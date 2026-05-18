@@ -148,6 +148,25 @@ Dashboard now displays **OANDA forex** and **Alpaca stocks+crypto** side-by-side
    - `DASHBOARD_LOCK_WEBHOOK_URL` + `DASHBOARD_LOCK_TOKEN` (same as jarvis-synth)
 3. Mount Volume at `/app/data` for ledger persistence.
 
+## Sim Broker + Auto Profit-Lock (2026-05-18, **NEW**)
+
+The in-memory mock trading engine (`backend/trading_engine.py`) is now treated as a full broker on the dashboard. The user wanted end-to-end proof that the lock mechanism works even without real Railway workers actively trading.
+
+### Backend
+- New `GET /api/broker/sim/summary` — same payload shape as oanda/alpaca, sourced from `trading_engine.compute_equity()`.
+- New helper `_sim_check_profit_lock(equity)` — fires on every summary poll. If equity ≥ baseline × 1.05, locks the gain into `profit_locks` with `source="sim"` and resets baseline. Stored in singleton MongoDB doc `sim_lock_baseline._id="main"`.
+- `/api/broker/all` now includes sim and sums it into Combined Wealth.
+
+### Frontend
+- New "JARVIS Sim Desk · Paper-Paper" card with amber accent (rgba(255,176,32,...)).
+- Custom cell labels per broker: OANDA→"Margin Used", Alpaca→"Buying Power", Sim→"Free Cash".
+- First-cell label is broker-aware: NAV for OANDA/Alpaca, "Live Equity" for Sim.
+
+### Verified
+- Auto-lock fires correctly when threshold crossed (test: forced baseline $90,000, equity $101,067 → locked $11,067 on next poll).
+- No double-fire on subsequent polls (baseline reset works).
+- Source-tagged locks: sim doesn't pollute OANDA/Alpaca locked-profit attribution.
+
 ## Last session ops checklist
 
 - [x] Tavily key validated against live API

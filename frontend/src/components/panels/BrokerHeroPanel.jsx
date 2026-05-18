@@ -6,6 +6,7 @@ import {
   ArrowUpRight,
   Banknote,
   Bitcoin,
+  Cpu,
   Layers,
   Wallet,
   Zap,
@@ -62,6 +63,14 @@ const BROKER_META = {
     accentSoft: "rgba(0,229,255,0.10)",
     cells: ["Live NAV", "Locked Profits", "Open Positions", "Buying Power"],
   },
+  sim: {
+    label: "JARVIS Sim Desk",
+    sublabel: "Paper-Paper",
+    Icon: Cpu,
+    accent: "rgba(255,176,32,0.6)", // amber
+    accentSoft: "rgba(255,176,32,0.10)",
+    cells: ["Live Equity", "Locked Profits", "Open Positions", "Free Cash"],
+  },
 };
 
 /**
@@ -89,7 +98,9 @@ const BrokerCard = ({ broker, data, error, delay = 0 }) => {
   const fourthCell =
     broker === "oanda"
       ? { label: "Margin Used", value: fmt(data?.margin_used ?? 0, currency), accent: "muted" }
-      : { label: "Buying Power", value: fmt(data?.margin_available ?? 0, currency), accent: "muted" };
+      : broker === "alpaca"
+      ? { label: "Buying Power", value: fmt(data?.margin_available ?? 0, currency), accent: "muted" }
+      : { label: "Free Cash", value: fmt(data?.balance ?? 0, currency), accent: "muted" };
 
   return (
     <motion.section
@@ -209,7 +220,7 @@ const BrokerCard = ({ broker, data, error, delay = 0 }) => {
 
       {/* Breakdown grid */}
       <div className="mt-5 grid grid-cols-2 md:grid-cols-4 gap-px bg-white/5 rounded-2xl overflow-hidden border border-white/5">
-        <Cell label="Live NAV" value={fmt(nav, currency)} />
+        <Cell label={meta.cells[0]} value={fmt(nav, currency)} />
         <Cell
           label="Locked Profits"
           value={fmt(locked, currency)}
@@ -294,6 +305,7 @@ export const MultiBrokerHero = ({ refreshKey }) => {
 
   const oanda = data?.oanda;
   const alpaca = data?.alpaca;
+  const sim = data?.sim;
   const combinedWealth = data?.combined?.total_wealth ?? 0;
   const combinedPositions = data?.combined?.open_positions ?? 0;
 
@@ -318,7 +330,7 @@ export const MultiBrokerHero = ({ refreshKey }) => {
               Combined Wealth
             </span>
             <span className="font-mono text-[10px] tracking-[0.22em] uppercase text-white/30">
-              · OANDA + Alpaca
+              · OANDA + Alpaca + Sim
             </span>
           </div>
           <div className="flex items-center gap-3">
@@ -353,9 +365,10 @@ export const MultiBrokerHero = ({ refreshKey }) => {
         </div>
       </motion.section>
 
-      {/* Two stacked broker cards */}
+      {/* Three stacked broker cards */}
       <BrokerCard broker="oanda" data={oanda} error={null} delay={120} />
       <BrokerCard broker="alpaca" data={alpaca} error={null} delay={220} />
+      <BrokerCard broker="sim" data={sim} error={null} delay={320} />
     </div>
   );
 };

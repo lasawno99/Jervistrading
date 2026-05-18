@@ -576,23 +576,126 @@ async def broker_alpaca_summary():
     return payload
 
 
+# ----------------------- Sim broker (in-memory paper desk) -----------------------
+
+SIM_PROFIT_LOCK_THRESHOLD_PCT = 5.0
+
+
+async def _sim_check_profit_lock(equity: float) -> dict | None:
+    """Auto-lock simulator profits at +5% NAV growth.
+
+    Maintains a baseline in MongoDB collection ``sim_lock_baseline`` (singleton doc).
+    When equity ≥ baseline × 1.05, locks the gain into the same ``profit_locks``
+    collection (with ``source="sim"``), resets baseline to current equity.
+    """
+    doc = await db.sim_lock_baseline.find_one({"_id": "main"}, {"_id": 0})
+    if doc is None:
+        # First-touch initialization — set baseline to current equity, don't lock yet.
+        await db.sim_lock_baseline.insert_one({"_id": "main", "baseline": float(equity)})
+        return None
+
+    baseline = float(doc.get("baseline") or 0.0)
+    if baseline <= 0:
+        # Defensive: never divide by 0
+        await db.sim_lock_baseline.update_one(
+            {"_id": "main"}, {"$set": {"baseline": float(equity)}}, upsert=True
+        )
+        return None
+
+    target = baseline * (1 + SIM_PROFIT_LOCK_THRESHOLD_PCT / 100.0)
+    if equity < target:
+        return None
+
+    # Threshold crossed — lock the gain, reset baseline.
+    locked_amount = float(equity) - baseline
+    ts = datetime.now(timezone.utc).isoformat()
+    event = {
+        "timestamp": ts,
+        "amount": locked_amount,
+        "nav_at_lock": float(equity),
+        "baseline_before": baseline,
+        "baseline_after": float(equity),
+        "source": "sim",
+        "received_at": ts,
+    }
+    await db.profit_locks.update_one(
+        {"timestamp": ts, "source": "sim"},
+        {"$setOnInsert": event},
+        upsert=True,
+    )
+    await db.sim_lock_baseline.update_one(
+        {"_id": "main"}, {"$set": {"baseline": float(equity)}}, upsert=True
+    )
+    logging.info(f"sim_profit_lock_fired amount={locked_amount:.2f} new_baseline={equity:.2f}")
+    return event
+
+
+@api_router.get("/broker/sim/summary")
+async def broker_sim_summary():
+    """Internal JARVIS sim desk (paper-paper). Auto-locks at +5% NAV growth.
+
+    This is the same in-memory engine that powers the "BOT · ACCOUNT" left-rail
+    panel — chat commands like 'buy 0.05 BTC' fill against it. Treated as a
+    full broker here so the dashboard's locked-profits mechanism is end-to-end
+    demonstrated even without real Railway workers firing.
+    """
+    eq = await te.compute_equity(db)
+    equity = float(eq.get("equity") or 0.0)
+    cash = float(eq.get("cash") or 0.0)
+    starting_cash = float(eq.get("starting_cash") or 100_000.0)
+    positions = eq.get("positions") or []
+    unrealized = float(eq.get("total_pl") or 0.0)
+
+    # Fire the lock check on every poll (cheap MongoDB read + maybe one write).
+    await _sim_check_profit_lock(equity)
+
+    # Shape it like the other broker payloads via the common helper.
+    acct = {
+        "currency": "USD",
+        "balance": cash,
+        "equity": equity,
+        "nav": equity,
+        "unrealized_pl": unrealized,
+        "open_position_count": len(positions),
+        "open_trade_count": len(positions),
+        "margin_used": 0.0,
+        "margin_available": cash,
+        "source": "sim",
+    }
+    locked_filter = {"source": "sim"}
+    payload = await _broker_summary_for(broker="sim", acct=acct, locked_filter=locked_filter)
+    payload["starting_cash"] = starting_cash
+    payload["positions_detail"] = positions
+    return payload
+
+
 @api_router.get("/broker/all")
 async def broker_all():
-    """Combined view: OANDA + Alpaca side-by-side, plus a unified Total Wealth."""
+    """Combined view: OANDA + Alpaca + Sim side-by-side, plus a unified Total Wealth."""
     oanda = await broker_oanda_summary()
     alpaca = await broker_alpaca_summary()
+    sim = await broker_sim_summary()
 
     def _sum(*vals):
         return sum(float(v or 0) for v in vals if isinstance(v, (int, float)))
 
-    combined_nav = _sum(oanda.get("nav"), alpaca.get("nav"))
-    combined_locked = _sum(oanda.get("locked_profits"), alpaca.get("locked_profits"))
+    combined_nav = _sum(oanda.get("nav"), alpaca.get("nav"), sim.get("nav"))
+    combined_locked = _sum(
+        oanda.get("locked_profits"), alpaca.get("locked_profits"), sim.get("locked_profits")
+    )
     combined_wealth = combined_nav + combined_locked
-    combined_unrealized = _sum(oanda.get("unrealized_pl"), alpaca.get("unrealized_pl"))
-    combined_positions = int((oanda.get("open_positions") or 0) + (alpaca.get("open_positions") or 0))
+    combined_unrealized = _sum(
+        oanda.get("unrealized_pl"), alpaca.get("unrealized_pl"), sim.get("unrealized_pl")
+    )
+    combined_positions = int(
+        (oanda.get("open_positions") or 0)
+        + (alpaca.get("open_positions") or 0)
+        + (sim.get("open_positions") or 0)
+    )
     return {
         "oanda": oanda,
         "alpaca": alpaca,
+        "sim": sim,
         "combined": {
             "nav": combined_nav,
             "locked_profits": combined_locked,
