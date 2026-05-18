@@ -97,9 +97,9 @@ const Bar = ({ pct, color = "var(--accent-1)" }) => {
   );
 };
 
-const Kpi = ({ title, value, sub, accent, children, testId, delay }) => (
+const Kpi = ({ title, value, sub, accent, children, testId, delay, className = "" }) => (
   <motion.div
-    className="card p-4 flex flex-col gap-2 min-w-0"
+    className={`card p-4 flex flex-col gap-2 min-w-0 ${className}`}
     initial={{ opacity: 0, y: 14 }}
     animate={{ opacity: 1, y: 0 }}
     transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1], delay }}
@@ -201,6 +201,7 @@ export const HeroMetricsRow = () => {
         accent="var(--text-3)"
         testId="kpi-win-rate"
         delay={0.25}
+        className="col-span-2 md:col-span-1 lg:col-span-1"
       >
         {winRate != null && (
           <div className="flex justify-end -mt-2">

@@ -212,6 +212,7 @@ async def execute_trade(db, symbol: str, side: str, qty: float, price: Optional[
         if not existing or existing["qty"] < qty:
             have = existing["qty"] if existing else 0
             return {"ok": False, "error": f"Insufficient position. Have {have} {symbol}"}
+        entry_px = float(existing.get("entry") or 0)
         new_qty = existing["qty"] - qty
         if new_qty <= 1e-9:
             await db.paper_positions.delete_one({"symbol": symbol})
@@ -219,6 +220,23 @@ async def execute_trade(db, symbol: str, side: str, qty: float, price: Optional[
             await db.paper_positions.update_one({"symbol": symbol}, {"$set": {"qty": new_qty, "updated_at": now_iso()}})
         proceeds = px * qty
         await db.paper_account.update_one({"_id": "main"}, {"$set": {"cash": acc["cash"] + proceeds, "updated_at": now_iso()}})
+        # Realized P/L for this sell — entry price was set at open; exit is px now.
+        realized_pl = round((px - entry_px) * qty, 2) if entry_px else 0.0
+        realized_pct = round(((px - entry_px) / entry_px * 100.0), 4) if entry_px else 0.0
+        await db.closed_trades.insert_one({
+            "id": str(uuid.uuid4()),
+            "symbol": symbol,
+            "side": "sell",  # the closing side
+            "qty": qty,
+            "entry": entry_px,
+            "exit": px,
+            "pl": realized_pl,
+            "pl_pct": realized_pct,
+            "opened_at": existing.get("opened_at"),
+            "ts": now_iso(),
+            "source": source,
+            "broker": "sim",
+        })
     else:
         return {"ok": False, "error": f"Unknown side {side}"}
 

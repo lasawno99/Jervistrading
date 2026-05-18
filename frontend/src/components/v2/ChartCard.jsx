@@ -99,7 +99,7 @@ export const ChartCard = ({ symbol = "BTC", name = "Bitcoin", anchor = 80000 }) 
         </span>
       </div>
 
-      <div className="h-44 md:h-52 -mx-2">
+      <div className="h-36 sm:h-44 md:h-52 -mx-2">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
             <defs>

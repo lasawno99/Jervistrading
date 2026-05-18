@@ -140,7 +140,7 @@ export default function App() {
         }}
       />
 
-      <div className="relative z-10 max-w-[1400px] mx-auto pb-44 lg:pb-32">
+      <div className="relative z-10 max-w-[1400px] mx-auto pb-52 lg:pb-36">
         <TopHeader />
 
         <AnimatePresence mode="wait">

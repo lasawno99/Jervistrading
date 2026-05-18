@@ -202,6 +202,21 @@ Complete UI redesign per user-provided mockup + brief. Replaced the terminal/cyb
 - Frontend: lint clean, screenshot confirms layout matches mockup
 - Old layout removed from default route, components preserved in `/components/panels/` for Portfolio tab reuse
 
+## Mobile UX Pass + Real closed_trades Wiring (2026-05-18)
+
+### closed_trades MongoDB collection (`backend/trading_engine.py`)
+- `execute_trade()` sell path now writes a `closed_trades` document with `{symbol, side, qty, entry, exit, pl, pl_pct, opened_at, ts, source, broker: "sim"}` on every sell that closes a position.
+- `/api/dashboard/recent-trades` now prefers `closed_trades` (real fills), falls back to inferring from open positions for cold-start.
+- `/api/dashboard/hero` win_rate calc reads `closed_trades` — fires the first time a position closes profitably.
+- **Verified end-to-end**: buy 0.05 BTC → sell 0.05 BTC → `recent-trades` returns the closed event with realized P/L; `hero.win_rate` flipped from null → 0.0%.
+
+### Mobile UX polish
+- **Win Rate KPI**: was orphaned alone on row 3 of the mobile 2-col grid. Now spans both cols (`col-span-2 md:col-span-1`) with ring positioned right — reads naturally.
+- **Chart card height**: `h-36 sm:h-44 md:h-52` — tighter on small screens.
+- **Positions/trades tables**: horizontal scroll on narrow viewports (`overflow-x-auto` + `min-w-[420px]`) so 12-col grid never cramps below 420px.
+- **Bottom padding**: `pb-52 lg:pb-36` so tables don't get eaten by the floating Ask bar + Bottom Nav stack on mobile.
+- Verified at 393×852 (iPhone 14 Pro size): hero row reads cleanly, all touch targets ≥36px.
+
 ## Last session ops checklist
 
 - [x] Tavily key validated against live API
