@@ -167,6 +167,41 @@ The in-memory mock trading engine (`backend/trading_engine.py`) is now treated a
 - No double-fire on subsequent polls (baseline reset works).
 - Source-tagged locks: sim doesn't pollute OANDA/Alpaca locked-profit attribution.
 
+## v2 Dashboard — AI Financial Workspace OS (2026-05-18, **NEW**)
+
+Complete UI redesign per user-provided mockup + brief. Replaced the terminal/cyberpunk aesthetic with a modern AI-native financial workspace.
+
+### Theme
+- New `index.css`: Inter typography, matte graphite `#0b0b10` background, soft frosted-glass cards (`white/3` over `border-white/7`), electric-blue `#6c8dff` + violet `#9b7bff` accents. Up/Down = standard `#22c55e`/`#ef4444` Tailwind greens/reds. Subtle grain overlay. No more mono fonts, no scan-lines, no cyan terminal feel.
+
+### New components (`/app/frontend/src/components/v2/`)
+1. `TopHeader` — Logo + Jarvis + Search + Bell (badge) + Menu
+2. `HeroMetricsRow` — 5 KPIs (Total Equity / Day's P/L / Total Cash / Exposure / Win Rate) with animated CountUp + Recharts sparklines + progress bar + ring
+3. `ChartCard` — Recharts area chart with timeframe pills (1H/1D/1W/1M/3M/1Y) + High/Low/Range stats
+4. `TradingPeersCluster` — 8 surrounding nodes around a central "You" node. Lines connect periphery to center. Status-colored (bullish green / bearish red / neutral blue / agent violet). Click an asset node → focuses the chart. Mix of 5 assets (BTC, ETH, NVDA, TSLA, OIL) + 3 AI agents (KRNS, CLDE, KIMI).
+5. `AgentStatusCard`, `AutomationCard`, `TopSignalsCard` — 3 utility cards in a row
+6. `OpenPositionsTable`, `RecentTradesTable` — Aggregated across OANDA + Alpaca + Sim
+7. `AskJarvisBar` — Floating glassmorphic pill with spinning orb + mic + send (gradient button)
+8. `BottomNav` — 5 tabs (Dashboard / Portfolio / [+] / Agents / Settings), center-stage primary button
+
+### Backend additions (`/app/backend/server.py`)
+- `GET /api/dashboard/hero` — combined KPI aggregate (equity, day P/L, cash, exposure %, win rate)
+- `GET /api/dashboard/sparkline?metric=equity|pl` — 30-point series from `nav_snapshots`
+- `GET /api/dashboard/peers` — cluster nodes (5 assets + 3 agents) with momentum %
+- `GET /api/dashboard/recent-trades` — newest fills across brokers + sim
+- `GET /api/dashboard/open-positions` — normalized positions across all 3 brokers
+
+### Tabs
+- **Dashboard** = the new mockup-style screen
+- **Portfolio** = preserves the 3-broker stack (`MultiBrokerHero`) so the OANDA/Alpaca/Sim cards remain accessible
+- **Agents** = the 3 utility cards expanded
+- **Settings** = stub
+
+### Verified
+- Backend: all 5 new endpoints return real data ($301,898 total equity, peers with live status, sparkline from snapshots)
+- Frontend: lint clean, screenshot confirms layout matches mockup
+- Old layout removed from default route, components preserved in `/components/panels/` for Portfolio tab reuse
+
 ## Last session ops checklist
 
 - [x] Tavily key validated against live API

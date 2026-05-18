@@ -1,160 +1,157 @@
-/* Premium Dark Fintech — JARVIS redesign 2026-05-08
- * Fonts: Cabinet-Grotesk-likeness via Outfit + Manrope + JetBrains Mono.
+/* JARVIS v2 — AI Financial Workspace OS
+ * Inter typography · graphite background · soft glass · electric blue + violet
  */
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  /* Surface */
-  --jv-bg: #050505;
-  --jv-bg-2: #0a0a0a;
-  --jv-panel: rgba(255, 255, 255, 0.025);
-  --jv-panel-hover: rgba(255, 255, 255, 0.045);
-  --jv-border: rgba(255, 255, 255, 0.08);
-  --jv-border-hi: rgba(255, 255, 255, 0.16);
+  /* Surface — matte graphite */
+  --bg: #0b0b10;
+  --bg-2: #11121a;
+  --card: rgba(255, 255, 255, 0.03);
+  --card-hover: rgba(255, 255, 255, 0.055);
+  --border: rgba(255, 255, 255, 0.07);
+  --border-hi: rgba(255, 255, 255, 0.14);
 
   /* Text */
-  --jv-text: #ffffff;
-  --jv-text-2: rgba(255, 255, 255, 0.55);
-  --jv-text-3: rgba(255, 255, 255, 0.32);
+  --text: #ffffff;
+  --text-2: rgba(255, 255, 255, 0.58);
+  --text-3: rgba(255, 255, 255, 0.36);
 
-  /* Accents */
-  --jv-aura-1: #00e5ff;
-  --jv-aura-2: #7b61ff;
-  --jv-up: #00ff85;
-  --jv-down: #ff3b6e;
-  --jv-warn: #ffb020;
+  /* Accents — soft electric blue + violet */
+  --accent-1: #6c8dff;   /* soft electric blue */
+  --accent-2: #9b7bff;   /* violet */
+  --accent-3: #5cffe5;   /* mint (subtle) */
+  --up: #22c55e;
+  --down: #ef4444;
+  --warn: #f59e0b;
 
-  /* Fonts */
-  --font-heading: 'Outfit', system-ui, sans-serif;
-  --font-sans: 'Manrope', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
 * { box-sizing: border-box; }
+*, *::before, *::after { -webkit-font-smoothing: antialiased; }
 
 html, body, #root {
   height: 100%;
   margin: 0;
-  background: var(--jv-bg);
-  color: var(--jv-text);
+  background: var(--bg);
+  color: var(--text);
   font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 }
 
-::selection { background: var(--jv-aura-1); color: #000; }
+::selection { background: var(--accent-1); color: #fff; }
 
-.font-heading { font-family: var(--font-heading); letter-spacing: -0.02em; }
-.font-sans    { font-family: var(--font-sans); }
-.font-mono    { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-
-/* Legacy compat (existing panels still use these) */
-.font-display    { font-family: var(--font-heading); letter-spacing: -0.005em; }
-.glow-cyan       { text-shadow: 0 0 12px rgba(0, 229, 255, 0.55); }
-.glow-magenta    { text-shadow: 0 0 12px rgba(255, 59, 110, 0.55); }
-.divider-cyan    { border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
-
-/* Background grain — subtle, replaces both grain + scan-lines */
-.grain::before {
+/* Subtle grain */
+.bg-grain::before {
   content: "";
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 5;
-  opacity: 0.05;
-  mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-/* Glassmorphic panel */
-.jv-panel {
-  background: var(--jv-panel);
+/* Card */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
   backdrop-filter: blur(20px) saturate(140%);
   -webkit-backdrop-filter: blur(20px) saturate(140%);
-  border: 1px solid var(--jv-border);
-  border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-  transition: border-color 250ms ease, background 250ms ease, transform 250ms ease;
+  transition: border-color 200ms ease, background 200ms ease, transform 200ms ease;
 }
-.jv-panel:hover {
-  border-color: var(--jv-border-hi);
-  background: var(--jv-panel-hover);
+.card:hover {
+  border-color: var(--border-hi);
+  background: var(--card-hover);
 }
 
-/* Hero variant — taller, gradient sheen on top edge */
-.jv-hero {
-  background:
-    radial-gradient(120% 60% at 50% -10%, rgba(123, 97, 255, 0.10) 0%, transparent 60%),
-    linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 100%);
-  border: 1px solid var(--jv-border-hi);
-  border-radius: 24px;
-  box-shadow:
-    0 20px 60px rgba(0,0,0,0.55),
-    inset 0 1px 0 rgba(255,255,255,0.06);
+.card-title {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
 }
 
-/* Up / Down value glow */
-.val-up   { color: var(--jv-up);   text-shadow: 0 0 14px rgba(0,255,133,0.35); }
-.val-down { color: var(--jv-down); text-shadow: 0 0 14px rgba(255,59,110,0.35); }
-
-/* Stagger entrance (used for non-framer panels) */
-@keyframes panel-in {
-  from { opacity: 0; transform: translateY(12px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.panel-in { animation: panel-in 700ms cubic-bezier(0.22, 1, 0.36, 1) both; }
-
-/* Caret blink */
-@keyframes blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
-.caret { animation: blink 1.05s steps(1) infinite; }
-
-/* Custom scrollbar */
-.jv-scroll::-webkit-scrollbar       { width: 6px; }
-.jv-scroll::-webkit-scrollbar-track  { background: transparent; }
-.jv-scroll::-webkit-scrollbar-thumb  { background: rgba(255,255,255,0.15); border-radius: 3px; }
-body::-webkit-scrollbar              { display: none; }
-
-/* JARVIS Orb */
-@keyframes orb-spin       { to { transform: rotate(360deg); } }
-@keyframes orb-spin-rev   { to { transform: rotate(-360deg); } }
-@keyframes orb-breathe    { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.025); } }
-
-.orb-conic     { animation: orb-spin 14s linear infinite; }
-.orb-conic-rev { animation: orb-spin-rev 22s linear infinite; }
-.orb-breathe   { animation: orb-breathe 4.5s cubic-bezier(0.45,0.05,0.55,0.95) infinite; }
-
-/* Listening — faster + warm */
-.orb-listening .orb-breathe { animation: orb-breathe 1.2s ease-in-out infinite; }
-.orb-listening .orb-conic   { animation-duration: 6s; }
-
-/* Thinking — medium */
-.orb-thinking .orb-breathe  { animation: orb-breathe 2s ease-in-out infinite; }
-.orb-thinking .orb-conic    { animation-duration: 8s; }
-
-/* Number ticker class hooks (used by CountUp wrapper) */
 .tabular { font-variant-numeric: tabular-nums; }
+
+.val-up   { color: var(--up); }
+.val-down { color: var(--down); }
 
 /* Buttons */
 .btn-primary {
-  background: #fff; color: #000; border-radius: 9999px;
-  padding: 0.5rem 1.25rem; font-size: 0.875rem; font-weight: 500;
-  transition: transform 150ms ease, background 150ms ease;
+  background: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+  color: #fff;
+  border-radius: 12px;
+  padding: 0.55rem 1rem;
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  transition: transform 150ms ease, box-shadow 150ms ease, filter 150ms ease;
+  box-shadow: 0 8px 24px rgba(108, 141, 255, 0.25);
 }
-.btn-primary:hover { background: rgba(255,255,255,0.92); transform: translateY(-1px); }
+.btn-primary:hover { transform: translateY(-1px); filter: brightness(1.08); }
 .btn-primary:active { transform: translateY(0); }
 
 .btn-ghost {
-  background: rgba(255,255,255,0.04); color: #fff;
-  border: 1px solid var(--jv-border); border-radius: 9999px;
-  padding: 0.5rem 1.25rem; font-size: 0.875rem;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.5rem 1rem;
+  font-size: 13px;
   transition: background 150ms ease, border-color 150ms ease;
 }
-.btn-ghost:hover { background: rgba(255,255,255,0.09); border-color: var(--jv-border-hi); }
+.btn-ghost:hover { background: rgba(255,255,255,0.09); border-color: var(--border-hi); }
+
+/* Scrollbar */
+.scroll-y::-webkit-scrollbar { width: 6px; }
+.scroll-y::-webkit-scrollbar-track { background: transparent; }
+.scroll-y::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+body::-webkit-scrollbar { display: none; }
+
+/* Cluster node glow */
+@keyframes node-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--node-glow, rgba(108,141,255,0.6)); }
+  50% { box-shadow: 0 0 0 8px transparent; }
+}
+.node-pulse { animation: node-pulse 2.5s ease-in-out infinite; }
+
+/* Voice orb */
+@keyframes orb-spin { to { transform: rotate(360deg); } }
+.orb-spin { animation: orb-spin 12s linear infinite; }
+
+/* Listening shimmer */
+@keyframes listen {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.05); }
+}
+.listening { animation: listen 1s ease-in-out infinite; }
+
+/* Caret */
+@keyframes blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
+.caret { animation: blink 1.05s steps(1) infinite; }
 
 /* Reset */
 button { font-family: inherit; }
 input, textarea { font-family: inherit; }
+input:focus { outline: none; }
+
+/* Legacy compat for old components */
+.font-heading { font-family: var(--font-sans); letter-spacing: -0.02em; }
+.font-sans    { font-family: var(--font-sans); }
+.font-mono    { font-family: var(--font-sans); font-variant-numeric: tabular-nums; }
+.font-display { font-family: var(--font-sans); }
+.glow-cyan    { color: var(--accent-1); }
+.glow-magenta { color: var(--accent-2); }
+.divider-cyan { border-bottom: 1px solid var(--border); }
+.jv-panel     { background: var(--card); border: 1px solid var(--border); border-radius: 18px; backdrop-filter: blur(20px); }
+.jv-hero      { background: var(--card); border: 1px solid var(--border-hi); border-radius: 22px; backdrop-filter: blur(20px); }
+.tabular      { font-variant-numeric: tabular-nums; }
