@@ -35,6 +35,34 @@ Final mobile UX pass per user mockup. Dashboard tab is now a fixed-height single
 - **P2:** MT4/MT5 Windows VPS + Cloudflare tunnel (deferred by user).
 - **P3:** Production env-var sync helper UI (user previously got confused why prod showed no data — needs explicit env-var injection via Emergent Support).
 
+## CoinMarketCap Integration — Market Pulse Strip (2026-05-19, **NEW**)
+
+CMC Pro API wired into the Dashboard via a thin 30px strip (regime · F&G · top-movers marquee) — preserves the strict single-screen-no-scroll rule on mobile 393×852.
+
+### Backend (`/app/backend/`)
+- `cmc_client.py` — async httpx client with in-memory 75s TTL cache + daily call counter. Single source of truth for all CMC calls.
+- `market_routes.py` — APIRouter `/market/*`:
+  - `GET /api/market/status` — `{configured, cache_entries, calls_today, cache_ttl_seconds}` (observability)
+  - `GET /api/market/fear-greed` — `{value 0-100, classification, fetched_at}` (CMC `/v3/fear-and-greed/latest`)
+  - `GET /api/market/regime` — derived bull/bear/chop from `/v1/global-metrics/quotes/latest` + F&G score
+  - `GET /api/market/top-movers?top_n=5` — gainers/losers from `/v1/cryptocurrency/listings/latest`
+- Key stored at `/app/backend/.env` as `CMC_API_KEY` — never exposed to frontend.
+
+### Frontend (`/app/frontend/src/components/v2/MarketPulseStrip.jsx`)
+- Sits between `TodayProfitHero` and `TradingPeersCluster` on the Dashboard tab (~30px tall).
+- Regime pill (BULL green / BEAR red / CHOP grey), F&G chip with 0-100 score in classification color, and a paused-on-hover horizontal marquee of 8 top tickers (4 gainers + 4 losers interleaved).
+- Polls every 90s (matches server cache TTL); axios timeouts at 10s.
+
+### Verified end-to-end
+- All 3 CMC endpoints live: BTC dom ~60%, regime=CHOP, F&G=39 (Fear), top gainer ONDO +12.4%, top loser FLR -6.5%.
+- **Testing agent: 100% pass** (backend 6/6 pytest + frontend full coverage).
+- Mobile 393×852 still zero-scroll after strip insertion (cluster max-size shrunk from 240→220 to compensate).
+- Cache works — repeat calls within 75s don't increment `calls_today` (free-tier safe).
+- CMC key NEVER appears in any response body, request header, or browser console.
+
+### Optional next step
+- Feed the `regime` signal into `jarvis-synth-alpaca` filter chain so workers skip new entries during CHOP regimes (would need `CMC_API_KEY` added to Railway service variables; user can decide later).
+
 # PRD — JARVIS Trading System (monorepo)
 
 ## Services in this repo

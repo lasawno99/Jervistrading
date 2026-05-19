@@ -38,9 +38,9 @@ export const MarketPulseStrip = ({ delay = 0.15 }) => {
     const load = async () => {
       try {
         const [r, f, m] = await Promise.all([
-          axios.get(`${API}/market/regime`).catch(() => null),
-          axios.get(`${API}/market/fear-greed`).catch(() => null),
-          axios.get(`${API}/market/top-movers?top_n=4`).catch(() => null),
+          axios.get(`${API}/market/regime`, { timeout: 10000 }).catch(() => null),
+          axios.get(`${API}/market/fear-greed`, { timeout: 10000 }).catch(() => null),
+          axios.get(`${API}/market/top-movers?top_n=4`, { timeout: 10000 }).catch(() => null),
         ]);
         if (!alive) return;
         if (r?.data) setRegime(r.data);
@@ -119,8 +119,19 @@ export const MarketPulseStrip = ({ delay = 0.15 }) => {
       >
         {tickers.length > 0 ? (
           <div className="inline-flex items-center gap-3 marquee-track" style={{ animation: "marquee 28s linear infinite" }}>
-            {[...tickers, ...tickers].map((t, i) => (
-              <span key={`${t.symbol}-${i}`} className="inline-flex items-center gap-1 text-[11px]">
+            {tickers.map((t, i) => (
+              <span key={`a-${t.symbol}-${i}`} className="inline-flex items-center gap-1 text-[11px]">
+                <span className="font-semibold text-white/85">{t.symbol}</span>
+                <span
+                  className="tabular font-medium"
+                  style={{ color: t.up ? "var(--up)" : "var(--down)" }}
+                >
+                  {t.up ? "+" : ""}{t.change_24h.toFixed(2)}%
+                </span>
+              </span>
+            ))}
+            {tickers.map((t, i) => (
+              <span key={`b-${t.symbol}-${i}`} aria-hidden="true" className="inline-flex items-center gap-1 text-[11px]">
                 <span className="font-semibold text-white/85">{t.symbol}</span>
                 <span
                   className="tabular font-medium"
