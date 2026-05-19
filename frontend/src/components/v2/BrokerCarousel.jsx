@@ -56,14 +56,12 @@ const BrokerCard = ({ broker, data, idx }) => {
   const meta = BROKER_META[broker];
   const equity = data?.nav ?? 0;
   const pl = data?.dod_change ?? 0;
-  const positions = data?.open_positions ?? 0;
-  const buyingPower = data?.margin_available ?? data?.balance ?? 0;
   const up = pl >= 0;
   const connected = data && data.source !== "mock";
 
   return (
     <motion.div
-      className="flex-shrink-0 w-[88%] sm:w-[280px] rounded-2xl p-4 snap-start"
+      className="flex-shrink-0 w-[84%] sm:w-[260px] rounded-2xl p-3.5 snap-start"
       style={{
         background: "rgba(255,255,255,0.025)",
         border: "1px solid rgba(255,255,255,0.07)",
@@ -75,16 +73,16 @@ const BrokerCard = ({ broker, data, idx }) => {
       data-testid={`broker-card-${broker}`}
     >
       {/* Header */}
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center gap-2.5 min-w-0">
+      <div className="flex items-start justify-between mb-2.5">
+        <div className="flex items-center gap-2 min-w-0">
           <div
-            className="w-9 h-9 rounded-xl flex items-center justify-center text-[14px] font-bold flex-shrink-0"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-[13px] font-bold flex-shrink-0"
             style={{ background: meta.iconBg, color: "#fff" }}
           >
             {meta.iconChar}
           </div>
           <div className="min-w-0">
-            <div className="text-[14px] font-semibold leading-tight">{meta.label}</div>
+            <div className="text-[13px] font-semibold leading-tight">{meta.label}</div>
             <div className="text-[10px] mt-0.5 flex items-center gap-1">
               <span
                 className="inline-block w-1.5 h-1.5 rounded-full"
@@ -97,7 +95,7 @@ const BrokerCard = ({ broker, data, idx }) => {
           </div>
         </div>
         <span
-          className="text-[9px] font-semibold tracking-[0.10em] px-2 py-0.5 rounded"
+          className="text-[9px] font-semibold tracking-[0.10em] px-1.5 py-0.5 rounded"
           style={{ background: "rgba(108,141,255,0.18)", color: "var(--accent-1)" }}
         >
           {meta.tag}
@@ -105,15 +103,15 @@ const BrokerCard = ({ broker, data, idx }) => {
       </div>
 
       {/* EQUITY + P/L row */}
-      <div className="grid grid-cols-2 gap-3 mb-3">
+      <div className="grid grid-cols-2 gap-3 mb-1">
         <div>
           <div className="text-[9px] tracking-[0.10em] uppercase text-white/40 mb-0.5">Equity</div>
-          <div className="text-[16px] font-semibold tabular leading-tight">{fmtMoney(equity)}</div>
+          <div className="text-[14px] font-semibold tabular leading-tight">{fmtMoney(equity)}</div>
         </div>
         <div>
           <div className="text-[9px] tracking-[0.10em] uppercase text-white/40 mb-0.5">P/L (24H)</div>
           <div
-            className="text-[16px] font-semibold tabular leading-tight"
+            className="text-[14px] font-semibold tabular leading-tight"
             style={{ color: up ? "var(--up)" : "var(--down)" }}
           >
             {fmtSignedMoney(pl)}
@@ -121,20 +119,8 @@ const BrokerCard = ({ broker, data, idx }) => {
         </div>
       </div>
 
-      {/* Buying Power + Positions row */}
-      <div className="grid grid-cols-2 gap-3 mb-2">
-        <div>
-          <div className="text-[9px] tracking-[0.10em] uppercase text-white/40 mb-0.5">Buying Power</div>
-          <div className="text-[14px] font-medium tabular text-white/85 leading-tight">{fmtMoney(buyingPower)}</div>
-        </div>
-        <div>
-          <div className="text-[9px] tracking-[0.10em] uppercase text-white/40 mb-0.5">Positions</div>
-          <div className="text-[14px] font-medium tabular text-white/85 leading-tight">{positions}</div>
-        </div>
-      </div>
-
       {/* Sparkline footer */}
-      <div className="h-10 -mx-1 mt-1">
+      <div className="h-8 -mx-1 mt-1.5">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={sparkSeries(equity || 100)} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
             <defs>

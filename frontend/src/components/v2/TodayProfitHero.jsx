@@ -22,7 +22,7 @@ const fmtSignedMoney = (v) => {
   return `${v >= 0 ? "+" : "−"}${fmtMoney(Math.abs(v))}`;
 };
 
-const AnimatedMoney = ({ value, formatter = fmtSignedMoney, className = "" }) => {
+const AnimatedMoney = ({ value, formatter = fmtSignedMoney, className = "", color }) => {
   const mv = useMotionValue(0);
   const display = useTransform(mv, (v) => formatter(v));
   useEffect(() => {
@@ -32,7 +32,7 @@ const AnimatedMoney = ({ value, formatter = fmtSignedMoney, className = "" }) =>
     });
     return c.stop;
   }, [value, mv]);
-  return <motion.span className={`tabular ${className}`}>{display}</motion.span>;
+  return <motion.span className={`tabular ${className}`} style={color ? { color } : undefined}>{display}</motion.span>;
 };
 
 const BrokerChip = ({ label, value, pct, up, iconBg, iconChar }) => (
@@ -114,7 +114,7 @@ export const TodayProfitHero = () => {
 
   return (
     <motion.section
-      className="relative overflow-hidden rounded-3xl px-5 py-5"
+      className="relative overflow-hidden rounded-3xl px-5 py-4"
       style={{
         background: `linear-gradient(180deg, ${accentSoft} 0%, rgba(15,16,22,0.6) 100%)`,
         border: `1px solid ${up ? "rgba(34,197,94,0.30)" : "rgba(239,68,68,0.30)"}`,
@@ -126,7 +126,7 @@ export const TodayProfitHero = () => {
       data-testid="today-profit-hero"
     >
       {/* Top row */}
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center justify-between mb-1.5">
         <div className="flex items-center gap-1.5">
           <span className="text-[10px] tracking-[0.14em] uppercase text-white/55 font-medium">
             Today's Profit (Combined)
@@ -148,13 +148,13 @@ export const TodayProfitHero = () => {
       </div>
 
       {/* Big number + sparkline */}
-      <div className="flex items-end justify-between gap-3 mb-2">
+      <div className="flex items-end justify-between gap-3 mb-1.5">
         <AnimatedMoney
           value={dayPl}
-          className="text-[44px] sm:text-[52px] font-semibold tracking-tight leading-none"
-          // inline style for the dynamic color
+          color={up ? "var(--up)" : "var(--down)"}
+          className="text-[40px] sm:text-[48px] font-semibold tracking-tight leading-none"
         />
-        <div className="w-[130px] h-16 -mb-2 flex-shrink-0">
+        <div className="w-[110px] h-12 -mb-1 flex-shrink-0">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={sparkData} margin={{ top: 6, right: 0, bottom: 0, left: 0 }}>
               <defs>
@@ -178,7 +178,7 @@ export const TodayProfitHero = () => {
       </div>
 
       {/* % vs yesterday */}
-      <div className="flex items-center gap-2 mb-4">
+      <div className="flex items-center gap-2 mb-3">
         <span
           className="text-[12px] font-medium tabular"
           style={{ color: up ? "var(--up)" : "var(--down)" }}
@@ -187,8 +187,6 @@ export const TodayProfitHero = () => {
         </span>
         <span className="text-[12px] text-white/45">vs yesterday</span>
       </div>
-
-      <div className="text-[11px] text-white/50 mb-3">Combined Across Brokers</div>
 
       {/* Broker mini-chips */}
       <div className="flex items-center gap-4">
@@ -209,14 +207,6 @@ export const TodayProfitHero = () => {
           iconChar="A"
         />
       </div>
-
-      {/* Inject color into the big number via wrapper */}
-      <style>{`
-        [data-testid="today-profit-hero"] motion.span,
-        [data-testid="today-profit-hero"] .tabular {
-          color: ${up ? "var(--up)" : "var(--down)"};
-        }
-      `}</style>
     </motion.section>
   );
 };

@@ -59,22 +59,23 @@ export const TradingPeersCluster = ({ onSelect }) => {
 
   return (
     <motion.section
-      className="card p-4 flex flex-col"
+      className="card p-3 flex flex-col"
       initial={{ opacity: 0, y: 14 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.55, delay: 0.2, ease: [0.22, 1, 0.36, 1] }}
       data-testid="trading-peers-cluster"
     >
-      <header className="flex items-center justify-between mb-1">
+      <header className="flex items-center justify-between mb-0">
         <button className="w-7 h-7 rounded-lg flex items-center justify-center text-white/45 hover:text-white hover:bg-white/5 transition" aria-label="Reset">
           <RotateCcw size={13} />
         </button>
+        <span className="text-[10px] tracking-[0.14em] uppercase text-white/45 font-medium">Trading Cluster</span>
         <button className="w-7 h-7 rounded-lg flex items-center justify-center text-white/45 hover:text-white hover:bg-white/5 transition" aria-label="Info">
           <Info size={13} />
         </button>
       </header>
 
-      <div className="relative w-full" style={{ aspectRatio: "1" }}>
+      <div className="relative w-full mx-auto" style={{ aspectRatio: "1", maxWidth: 240, maxHeight: 240 }}>
         <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full pointer-events-none">
           {positions.map((p) => {
             const c = colorFor(p);
@@ -98,15 +99,15 @@ export const TradingPeersCluster = ({ onSelect }) => {
           <div
             className="rounded-full flex flex-col items-center justify-center node-pulse"
             style={{
-              width: 96, height: 96,
+              width: 80, height: 80,
               background: "radial-gradient(circle at 30% 30%, rgba(255,255,255,0.95), var(--accent-1) 40%, var(--accent-2) 100%)",
-              boxShadow: "0 0 42px rgba(108,141,255,0.55), inset 0 0 18px rgba(255,255,255,0.25)",
+              boxShadow: "0 0 36px rgba(108,141,255,0.55), inset 0 0 16px rgba(255,255,255,0.25)",
               "--node-glow": "rgba(108,141,255,0.65)",
             }}
             data-testid="cluster-center"
           >
-            <span className="text-[12px] font-semibold tracking-wide text-white/95">YOU</span>
-            <span className="text-[11px] font-medium tabular text-white/85 mt-0.5">{fmtMoney(combinedWealth)}</span>
+            <span className="text-[11px] font-semibold tracking-wide text-white/95">YOU</span>
+            <span className="text-[10px] font-medium tabular text-white/85 mt-0.5">{fmtMoney(combinedWealth)}</span>
           </div>
         </motion.div>
 
@@ -127,17 +128,17 @@ export const TradingPeersCluster = ({ onSelect }) => {
               <div
                 className="rounded-full flex flex-col items-center justify-center transition-all"
                 style={{
-                  width: 56, height: 56,
+                  width: 48, height: 48,
                   background: "rgba(10,12,18,0.92)",
                   border: `2px solid ${c.stroke}`,
-                  boxShadow: `0 0 ${isActive ? 22 : 14}px ${c.glow}`,
+                  boxShadow: `0 0 ${isActive ? 18 : 11}px ${c.glow}`,
                   color: c.stroke,
                   transform: isActive ? "scale(1.1)" : "scale(1)",
                 }}
               >
-                <span className="text-[11px] font-bold tracking-tight leading-none">{n.label}</span>
+                <span className="text-[10px] font-bold tracking-tight leading-none">{n.label}</span>
                 {n.kind === "asset" && Math.abs(n.change_pct) > 0.01 && (
-                  <span className="text-[9px] tabular font-medium leading-none mt-0.5"
+                  <span className="text-[8px] tabular font-medium leading-none mt-0.5"
                         style={{ color: up ? "var(--up)" : "var(--down)" }}>
                     {up ? "+" : ""}{n.change_pct.toFixed(2)}%
                   </span>

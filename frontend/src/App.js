@@ -7,7 +7,8 @@ import { Toaster, toast } from "sonner";
 
 import TopHeader from "@/components/v2/TopHeader";
 import HeroMetricsRow from "@/components/v2/HeroMetricsRow";
-import ChartCard from "@/components/v2/ChartCard";
+import TodayProfitHero from "@/components/v2/TodayProfitHero";
+import BrokerCarousel from "@/components/v2/BrokerCarousel";
 import TradingPeersCluster from "@/components/v2/TradingPeersCluster";
 import AgentStatusCard from "@/components/v2/AgentStatusCard";
 import AutomationCard from "@/components/v2/AutomationCard";
@@ -15,25 +16,13 @@ import TopSignalsCard from "@/components/v2/TopSignalsCard";
 import OpenPositionsTable from "@/components/v2/OpenPositionsTable";
 import RecentTradesTable from "@/components/v2/RecentTradesTable";
 import BotBrainPanel from "@/components/v2/BotBrainPanel";
-import AskJarvisBar from "@/components/v2/AskJarvisBar";
+import AskJarvisModal from "@/components/v2/AskJarvisModal";
 import BottomNav from "@/components/v2/BottomNav";
 
-// Keep the existing 3-broker stack accessible behind the Portfolio tab
 import { MultiBrokerHero } from "@/components/panels/BrokerHeroPanel";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
-
-const ASSET_DEFAULTS = {
-  BTC: { name: "Bitcoin", anchor: 80000 },
-  ETH: { name: "Ethereum", anchor: 3800 },
-  NVDA: { name: "NVIDIA", anchor: 215 },
-  TSLA: { name: "Tesla", anchor: 248 },
-  OIL: { name: "WTI Crude", anchor: 116 },
-  KIMI: { name: "Kimi Agent", anchor: 100 },
-  CLDE: { name: "Claude Agent", anchor: 100 },
-  KRNS: { name: "Kronos Predictor", anchor: 100 },
-};
 
 function useSpeechRecognition(onResult) {
   const recRef = useRef(null);
@@ -80,7 +69,8 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [sessionId, setSessionId] = useState(null);
   const [tab, setTab] = useState("dashboard");
-  const [chartFocus, setChartFocus] = useState({ symbol: "BTC", ...ASSET_DEFAULTS.BTC });
+  const [askOpen, setAskOpen] = useState(false);
+  const [lastReply, setLastReply] = useState("");
   const [voiceEnabled] = useState(true);
 
   const handleCommand = useCallback(async (text) => {
@@ -91,6 +81,7 @@ export default function App() {
         session_id: sessionId || "dashboard-default",
       });
       setSessionId(r.data.session_id);
+      setLastReply(r.data.reply || "");
       toast("JARVIS", { description: r.data.reply });
       if (voiceEnabled) speak(r.data.reply);
     } catch (e) {
@@ -109,9 +100,10 @@ export default function App() {
   };
 
   const onPeerSelect = (node) => {
-    const def = ASSET_DEFAULTS[node.id] || { name: node.name || node.id, anchor: 100 };
     if (node.kind === "asset") {
-      setChartFocus({ symbol: node.id, name: def.name, anchor: def.anchor });
+      toast(node.label || node.id, {
+        description: `${node.name || node.id} · ${node.status || "watching"}`,
+      });
     } else {
       toast(node.name || node.id, { description: node.role || "Agent online" });
     }
@@ -141,52 +133,25 @@ export default function App() {
         }}
       />
 
-      <div className="relative z-10 max-w-[1400px] mx-auto pb-52 lg:pb-36">
+      <div className="relative z-10 max-w-[1400px] mx-auto pb-24">
         <TopHeader />
 
         <AnimatePresence mode="wait">
           <motion.main
             key={tab}
-            className="px-4 md:px-6 pt-2 space-y-5"
+            className="px-4 md:px-6 pt-1"
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+            data-testid={`tab-${tab}`}
           >
             {tab === "dashboard" && (
-              <>
-                <HeroMetricsRow />
-
-                {/* Main workspace: chart (left) + peers cluster (right) */}
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-                  <div className="lg:col-span-7 xl:col-span-8">
-                    <ChartCard
-                      symbol={chartFocus.symbol}
-                      name={chartFocus.name}
-                      anchor={chartFocus.anchor}
-                    />
-                  </div>
-                  <div className="lg:col-span-5 xl:col-span-4">
-                    <TradingPeersCluster onSelect={onPeerSelect} />
-                  </div>
-                </div>
-
-                {/* Three small cards */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                  <AgentStatusCard />
-                  <AutomationCard />
-                  <TopSignalsCard />
-                </div>
-
-                {/* Tables */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                  <OpenPositionsTable />
-                  <RecentTradesTable />
-                </div>
-
-                {/* Bot Brain — live pipeline decisions */}
-                <BotBrainPanel delay={0.55} />
-              </>
+              <div className="space-y-3">
+                <TodayProfitHero />
+                <TradingPeersCluster onSelect={onPeerSelect} />
+                <BrokerCarousel />
+              </div>
             )}
 
             {tab === "portfolio" && (
@@ -194,10 +159,15 @@ export default function App() {
                 <div>
                   <h2 className="text-[22px] font-semibold tracking-tight">Portfolio</h2>
                   <p className="text-[13px] text-white/45 mt-1">
-                    Live across all connected brokers — OANDA forex, Alpaca stocks &amp; crypto, and the JARVIS Sim Desk.
+                    Live across all connected brokers — OANDA forex, Alpaca stocks &amp; crypto, JARVIS Sim Desk.
                   </p>
                 </div>
+                <HeroMetricsRow />
                 <MultiBrokerHero />
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                  <OpenPositionsTable />
+                  <RecentTradesTable />
+                </div>
               </div>
             )}
 
@@ -206,7 +176,7 @@ export default function App() {
                 <div>
                   <h2 className="text-[22px] font-semibold tracking-tight">Agents</h2>
                   <p className="text-[13px] text-white/45 mt-1">
-                    Connected services keeping the system running.
+                    Watch each pipeline layer think in real time.
                   </p>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -214,6 +184,7 @@ export default function App() {
                   <AutomationCard delay={0.1} />
                   <TopSignalsCard delay={0.15} />
                 </div>
+                <BotBrainPanel delay={0.2} />
               </div>
             )}
 
@@ -222,7 +193,7 @@ export default function App() {
                 <h2 className="text-[22px] font-semibold tracking-tight">Settings</h2>
                 <div className="card p-6">
                   <p className="text-[13px] text-white/50">
-                    Configuration UI coming soon. Variables are managed via Railway and the backend `.env`.
+                    Configuration UI coming soon. Variables are managed via Railway and the backend <code>.env</code>.
                   </p>
                 </div>
               </div>
@@ -231,31 +202,36 @@ export default function App() {
         </AnimatePresence>
       </div>
 
-      {/* Floating Ask Jarvis bar + Bottom Nav */}
+      {/* Bottom Nav (no persistent ask-bar — that's now triggered by the "+" button) */}
       <div
         className="fixed bottom-0 left-0 right-0 z-40 pointer-events-none"
         style={{
           background:
-            "linear-gradient(to top, rgba(11,11,16,0.95) 0%, rgba(11,11,16,0.55) 55%, transparent 100%)",
-          paddingTop: 32,
+            "linear-gradient(to top, rgba(11,11,16,0.96) 0%, rgba(11,11,16,0.55) 60%, transparent 100%)",
+          paddingTop: 24,
         }}
       >
-        <div className="max-w-3xl mx-auto px-4 pb-2 pointer-events-auto">
-          <AskJarvisBar
-            onSend={handleCommand}
-            busy={busy}
-            listening={speech.listening}
-            onToggleVoice={toggleVoice}
-          />
-        </div>
-        <div className="max-w-xl mx-auto px-4 pb-4 pt-2 pointer-events-auto">
+        <div
+          className="max-w-xl mx-auto px-4 pt-2 pointer-events-auto"
+          style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+        >
           <BottomNav
             active={tab}
             onChange={setTab}
-            onCreate={() => toast("Quick action", { description: "Quick-add coming soon" })}
+            onCreate={() => setAskOpen(true)}
           />
         </div>
       </div>
+
+      <AskJarvisModal
+        open={askOpen}
+        onClose={() => setAskOpen(false)}
+        onSend={handleCommand}
+        busy={busy}
+        listening={speech.listening}
+        onToggleVoice={toggleVoice}
+        lastReply={lastReply}
+      />
     </div>
   );
 }
