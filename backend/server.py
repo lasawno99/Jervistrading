@@ -767,6 +767,68 @@ async def dashboard_hero():
     }
 
 
+@api_router.get("/dashboard/win-rate-trend")
+async def dashboard_win_rate_trend(days: int = 14):
+    """Daily win-rate trend across `closed_trades` for the last `days` days.
+
+    Returns a series of {date, wins, total, win_rate} plus rolling totals.
+    Used by the Bot Brain panel header sparkline to monitor whether
+    filter quality is trending up before hitting the scale threshold.
+    """
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+
+    now = _dt.now(_tz.utc)
+    start = now - _td(days=days)
+    closed = await db.closed_trades.find(
+        {"ts": {"$gte": start.isoformat()}}, {"_id": 0, "ts": 1, "pl": 1}
+    ).to_list(5000)
+
+    by_day: dict[str, dict[str, int]] = {}
+    for i in range(days):
+        d = (start + _td(days=i)).date().isoformat()
+        by_day[d] = {"wins": 0, "total": 0}
+
+    for t in closed:
+        ts_str = t.get("ts")
+        if not ts_str:
+            continue
+        try:
+            ts_dt = _dt.fromisoformat(str(ts_str).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        d = ts_dt.date().isoformat()
+        if d not in by_day:
+            continue
+        by_day[d]["total"] += 1
+        if float(t.get("pl") or 0) > 0:
+            by_day[d]["wins"] += 1
+
+    series = []
+    cum_w, cum_t = 0, 0
+    for d in sorted(by_day.keys()):
+        row = by_day[d]
+        cum_w += row["wins"]
+        cum_t += row["total"]
+        series.append({
+            "date": d,
+            "wins": row["wins"],
+            "total": row["total"],
+            "win_rate": (row["wins"] / row["total"] * 100.0) if row["total"] > 0 else None,
+            "cum_wins": cum_w,
+            "cum_total": cum_t,
+            "cum_win_rate": (cum_w / cum_t * 100.0) if cum_t > 0 else None,
+        })
+
+    return {
+        "series": series,
+        "totals": {"wins": cum_w, "total": cum_t,
+                   "win_rate": (cum_w / cum_t * 100.0) if cum_t > 0 else None},
+        "threshold_pct": 40.0,
+        "threshold_trades": 20,
+        "as_of": now.isoformat(),
+    }
+
+
 @api_router.get("/dashboard/sparkline")
 async def dashboard_sparkline(metric: str = "equity"):
     """30-point sparkline series for hero KPI cards.

@@ -17,6 +17,7 @@ import TopSignalsCard from "@/components/v2/TopSignalsCard";
 import OpenPositionsTable from "@/components/v2/OpenPositionsTable";
 import RecentTradesTable from "@/components/v2/RecentTradesTable";
 import BotBrainPanel from "@/components/v2/BotBrainPanel";
+import WinRateTrendCard from "@/components/v2/WinRateTrendCard";
 import AskJarvisModal from "@/components/v2/AskJarvisModal";
 import BottomNav from "@/components/v2/BottomNav";
 
@@ -181,12 +182,13 @@ export default function App() {
                     Watch each pipeline layer think in real time.
                   </p>
                 </div>
+                <WinRateTrendCard delay={0.05} />
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                  <AgentStatusCard delay={0.05} />
-                  <AutomationCard delay={0.1} />
-                  <TopSignalsCard delay={0.15} />
+                  <AgentStatusCard delay={0.1} />
+                  <AutomationCard delay={0.15} />
+                  <TopSignalsCard delay={0.2} />
                 </div>
-                <BotBrainPanel delay={0.2} />
+                <BotBrainPanel delay={0.25} />
               </div>
             )}
 
