@@ -75,7 +75,7 @@ export const TradingPeersCluster = ({ onSelect }) => {
         </button>
       </header>
 
-      <div className="relative w-full mx-auto" style={{ aspectRatio: "1", maxWidth: 240, maxHeight: 240 }}>
+      <div className="relative w-full mx-auto" style={{ aspectRatio: "1", maxWidth: 220, maxHeight: 220 }}>
         <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full pointer-events-none">
           {positions.map((p) => {
             const c = colorFor(p);

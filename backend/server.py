@@ -1394,6 +1394,13 @@ async def trigger_cancel(aid: str):
 
 app.include_router(api_router)
 
+# CoinMarketCap-backed market routes (mounted under /api/market/*)
+import market_routes as mr  # noqa: E402
+import cmc_client as cmc  # noqa: E402
+api_router_market = APIRouter(prefix="/api")
+api_router_market.include_router(mr.router)
+app.include_router(api_router_market)
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
@@ -1455,4 +1462,8 @@ async def _equity_snapshot_loop():
 async def shutdown_db_client():
     for t in _bg_tasks:
         t.cancel()
+    try:
+        await cmc.close()
+    except Exception:
+        pass
     mongo_client.close()

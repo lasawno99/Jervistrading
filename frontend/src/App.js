@@ -9,6 +9,7 @@ import TopHeader from "@/components/v2/TopHeader";
 import HeroMetricsRow from "@/components/v2/HeroMetricsRow";
 import TodayProfitHero from "@/components/v2/TodayProfitHero";
 import BrokerCarousel from "@/components/v2/BrokerCarousel";
+import MarketPulseStrip from "@/components/v2/MarketPulseStrip";
 import TradingPeersCluster from "@/components/v2/TradingPeersCluster";
 import AgentStatusCard from "@/components/v2/AgentStatusCard";
 import AutomationCard from "@/components/v2/AutomationCard";
@@ -149,6 +150,7 @@ export default function App() {
             {tab === "dashboard" && (
               <div className="space-y-3">
                 <TodayProfitHero />
+                <MarketPulseStrip />
                 <TradingPeersCluster onSelect={onPeerSelect} />
                 <BrokerCarousel />
               </div>

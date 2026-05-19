@@ -1,0 +1,37 @@
+{
+  "summary": "Backend + Frontend testing of new CMC-backed Market Pulse feature. All 6 pytest backend tests pass (status/fear-greed/regime/top-movers shape + 75s cache + key-leak). Frontend on mobile 393x852 preserves zero-scroll (scrollHeight===innerHeight===852) after MarketPulseStrip insertion. All 3 new strip testids render real data (Regime=CHOP, F&G=39/Fear, marquee shows ONDO +12.43%, FLR -6.47%, INJ +11.78%, etc.). All previously-validated testids still work (today-profit-hero, 6 peer nodes, 3 broker cards, 5 bottom-nav tabs, ask-jarvis-modal opens on nav-create). CMC key NEVER appears in any /api response body, request URL/headers, or browser console — frontend only hits /api/market/* (no direct pro-api.coinmarketcap.com calls).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_market_routes.py",
+    "/app/test_reports/pytest/market_routes_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "cmc_client._daily_calls rollover is timezone-bound to UTC (time.gmtime) — fine for observability, just a note that 'today' won't match user-local midnight.",
+    "market_routes.get_regime makes TWO upstream calls (global-metrics + fear-and-greed) but only the first triggers _bump_counter for global-metrics; both are individually cached. On a cold cache, /regime consumes 2 CMC credits — worth documenting in code since the dashboard hits 3 endpoints on mount = up to 4 credits per fresh load (global-metrics, fear-and-greed, listings/latest), well within free-tier budget given 75s TTL.",
+    "MarketPulseStrip refresh interval is 90s but server cache TTL is 75s — minor drift means roughly every 6th tick will miss the cache. Consider aligning interval to ~80s to maximize cache hits, or expose TTL via /status and read it client-side.",
+    "MarketPulseStrip uses axios but never sets a timeout — if backend is slow to fetch from CMC, the loader text stays indefinitely. Add a 10s timeout + fallback UI.",
+    "Top movers marquee duplicates the ticker list ([...tickers, ...tickers]) for seamless scroll — works visually, but a screen reader will read each ticker twice. Add aria-hidden to the second copy."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_market_routes.py"
+  ],
+  "success_rate": {
+    "backend": "100% (6/6 pytest)",
+    "frontend": "100% (all testids + zero-scroll + key-leak checks)"
+  },
+  "test_credentials": "none required (CMC_API_KEY already in /app/backend/.env)",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Market Pulse strip is wired and stable. CMC free tier (~333 calls/day) is well-protected by the 75s in-memory cache (verified: calls_today does NOT increment on repeat calls within TTL window). If next iteration adds more dashboard widgets, MUST re-verify mobile 393x852 zero-scroll. Real CMC values seen during test: BTC dominance ~60%, regime=CHOP, F&G=39 (Fear), top gainer ONDO +12.43%, top loser FLR -6.47%. Backend test file at /app/backend/tests/test_market_routes.py is the regression suite for market endpoints.",
+  "rca of the issue": "No issues found. One cosmetic note: my regex `\\b(\\d{1,3})\\b` for parsing the F&G text did not match '39Fear' because there's no word boundary between digit and letter — value '39' IS displayed correctly in the UI (confirmed via screenshot), test logic was overly strict. Not a product bug."
+}
