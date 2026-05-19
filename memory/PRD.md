@@ -1,3 +1,40 @@
+## Mobile-First Single-Screen Dashboard (2026-05-19, **NEW**)
+
+Final mobile UX pass per user mockup. Dashboard tab is now a fixed-height single-screen view on mobile — **zero vertical scroll** at 393×852 (iPhone 14 Pro).
+
+### Dashboard tab layout (3 elements only)
+1. **TodayProfitHero** (`v2/TodayProfitHero.jsx`) — green/red gradient hero. Big animated combined-day P/L number, sparkline, vs-yesterday %, OANDA + Alpaca broker chips. ~195px tall.
+2. **TradingPeersCluster** — compact 240×240 cluster card. 6 asset peer nodes (BTC, ETH, NVDA, TSLA, OIL, KIMI) ringed around an 80px YOU bubble showing combined wealth. ~294px tall.
+3. **BrokerCarousel** (`v2/BrokerCarousel.jsx`) — horizontal snap-scroll of 3 broker cards (OANDA / Alpaca / Sim) with equity + 24H P/L + sparkline. ~152px tall.
+   Total: 195 + 294 + 152 + gaps + header + nav clearance ≈ 852 → fits exactly.
+
+### Tab routing (`App.js`)
+- **Dashboard** = the 3-element single-screen view (above)
+- **Portfolio** = HeroMetricsRow (5 KPIs) + MultiBrokerHero + OpenPositions + RecentTrades tables
+- **Agents** = AgentStatus + Automation + TopSignals cards + **BotBrainPanel** (live pipeline cycles)
+- **Settings** = stub
+
+### Ask Jarvis full-screen modal (`v2/AskJarvisModal.jsx`, **NEW**)
+- Triggered by the center `+` button in the Bottom Nav (replaces the old persistent floating bar).
+- Full-screen backdrop blur, centered orb (spins idle / pulses while listening), input pill + mic + send.
+- Closes on Escape, X button, or modal-bg click; locks body scroll while open.
+- Shows last JARVIS reply inline above the input.
+
+### Verified
+- Frontend testing agent: **100% pass** on mobile 393×852, tablet 768, desktop 1280.
+- `scrollHeight === innerHeight === 852` on Dashboard (zero scroll confirmed).
+- All testids present: today-profit-hero, trading-peers-cluster (6 peer-node-* children), broker-carousel (3 broker-card-* children), bottom-nav (5 nav-* buttons), ask-jarvis-modal (with input/mic/send/close).
+- Tab switching swaps content via `AnimatePresence`; modal opens/closes cleanly.
+- Backend endpoints `/api/dashboard/hero`, `/api/broker/all`, `/api/dashboard/peers`, `/api/bot-brain/cycles` all 200.
+
+## Backlog (refreshed 2026-05-19)
+
+- **P1:** CoinMarketCap integration — user has API key. Plan: Top Movers chip in Dashboard hero + Fear & Greed micro-widget + Market Regime detector input to QuantAgent filters. **User to provide CMC_API_KEY on a fresh chat line.**
+- **P2:** Scale jarvis-synth (OANDA) from 5 → 10 instruments after win-rate validation (raise `MAX_ORDERS_PER_MINUTE` first).
+- **P2:** Auto-attribute Locked Profits per source (already source-tagged; surface in Portfolio tab breakdown).
+- **P2:** MT4/MT5 Windows VPS + Cloudflare tunnel (deferred by user).
+- **P3:** Production env-var sync helper UI (user previously got confused why prod showed no data — needs explicit env-var injection via Emergent Support).
+
 # PRD — JARVIS Trading System (monorepo)
 
 ## Services in this repo

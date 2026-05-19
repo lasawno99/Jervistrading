@@ -13,7 +13,11 @@ export const AskJarvisModal = ({ open, onClose, onSend, busy, listening, onToggl
   useEffect(() => {
     if (open) {
       const t = setTimeout(() => inputRef.current?.focus(), 100);
-      return () => clearTimeout(t);
+      document.body.style.overflow = "hidden";
+      return () => {
+        clearTimeout(t);
+        document.body.style.overflow = "";
+      };
     }
   }, [open]);
 

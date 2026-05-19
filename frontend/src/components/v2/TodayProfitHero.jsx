@@ -154,7 +154,7 @@ export const TodayProfitHero = () => {
           color={up ? "var(--up)" : "var(--down)"}
           className="text-[40px] sm:text-[48px] font-semibold tracking-tight leading-none"
         />
-        <div className="w-[110px] h-12 -mb-1 flex-shrink-0">
+        <div className="w-[110px] h-12 -mb-1 flex-shrink-0" style={{ minWidth: 110, minHeight: 48 }}>
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={sparkData} margin={{ top: 6, right: 0, bottom: 0, left: 0 }}>
               <defs>
