@@ -249,6 +249,29 @@ FastAPI app on `STATUS_API_PORT` (default 8080), runs in a daemon thread alongsi
 - Token gating: 401 on missing/wrong token, 200 on correct
 - Filter rejection logging structured cleanly for the cycle log
 
+## Bot Brain Panel (2026-05-18, **NEW**)
+
+A live stream of every pipeline decision both Railway workers make, surfaced on the dashboard. The user wanted to "literally see the bot thinking" — done.
+
+### Backend
+- `POST /api/bot-brain/cycles` — auth via `X-Lock-Token`, idempotent on `(worker, instrument, timestamp)`. Stores in `bot_cycles` MongoDB collection, auto-trims at 2000 entries.
+- `GET /api/bot-brain/cycles?limit=N&worker=...` — newest first + LONG/SHORT/HOLD counts for the panel filter pills.
+
+### Workers
+- `cycle_log.append()` now also fires a background thread that POSTs each entry to `DASHBOARD_LOCK_WEBHOOK_URL` (derives the bot-brain URL by swapping the path). Fire-and-forget — never blocks the trading loop.
+- Worker name auto-detected from path so dashboard attributes correctly.
+
+### Frontend
+- New `BotBrainPanel` component below the tables: live rows with time + worker tag + action badge + Tauric/Kronos scores + reasoning. Filter veto rows show a red `🛡 indicators` chip explaining which filter rejected.
+- Auto-refreshes every 8s. Filter pills (ALL / LONG / SHORT / HOLD) with counts.
+- Mobile-friendly: scores collapse on small screens, reasoning wraps below.
+
+### Verified
+- Seeded 3 cycle types (LONG-armed, HOLD-floor, HOLD-filter-veto) via curl
+- Panel renders all 3 correctly with proper color coding (green Tauric ≥7, green Kronos >50%)
+- Filter pills count correctly (1 LONG, 2 HOLD)
+- Lint clean, screenshot confirmed
+
 ## Last session ops checklist
 
 - [x] Tavily key validated against live API

@@ -14,6 +14,7 @@ import AutomationCard from "@/components/v2/AutomationCard";
 import TopSignalsCard from "@/components/v2/TopSignalsCard";
 import OpenPositionsTable from "@/components/v2/OpenPositionsTable";
 import RecentTradesTable from "@/components/v2/RecentTradesTable";
+import BotBrainPanel from "@/components/v2/BotBrainPanel";
 import AskJarvisBar from "@/components/v2/AskJarvisBar";
 import BottomNav from "@/components/v2/BottomNav";
 
@@ -182,6 +183,9 @@ export default function App() {
                   <OpenPositionsTable />
                   <RecentTradesTable />
                 </div>
+
+                {/* Bot Brain — live pipeline decisions */}
+                <BotBrainPanel delay={0.55} />
               </>
             )}
 

@@ -1076,6 +1076,76 @@ async def broker_list_profit_locks(limit: int = 25):
     return {"events": [ev async for ev in cursor]}
 
 
+# ----------------------- Bot Brain: live cycle stream -----------------------
+
+class CycleEntry(BaseModel):
+    timestamp: str  # ISO UTC; idempotency key
+    worker: str  # "jarvis-synth" | "jarvis-synth-alpaca"
+    instrument: str
+    action: str  # LONG | SHORT | HOLD
+    units: float = 0
+    tauric_verdict: Optional[str] = None
+    tauric_confidence: Optional[float] = None
+    kronos_direction: Optional[str] = None
+    kronos_confidence: Optional[str] = None
+    kronos_upside_prob: Optional[float] = None
+    reasoning: Optional[str] = None
+    filters: list = []
+
+
+@api_router.post("/bot-brain/cycles")
+async def bot_brain_post_cycle(entry: CycleEntry, request: Request):
+    """Webhook for Railway workers to push every pipeline decision.
+
+    Same auth model as profit-locks: ``X-Lock-Token`` header must match
+    ``BROKER_LOCK_TOKEN`` env. Idempotency: ``(worker, instrument, timestamp)``.
+    """
+    expected = os.environ.get("BROKER_LOCK_TOKEN", "").strip()
+    if not expected:
+        raise HTTPException(status_code=503, detail="bot-brain webhook disabled")
+    presented = request.headers.get("x-lock-token", "").strip()
+    if not presented or presented != expected:
+        raise HTTPException(status_code=401, detail="invalid lock token")
+
+    doc = {
+        **entry.dict(),
+        "received_at": datetime.now(timezone.utc).isoformat(),
+    }
+    res = await db.bot_cycles.update_one(
+        {"worker": entry.worker, "instrument": entry.instrument, "timestamp": entry.timestamp},
+        {"$setOnInsert": doc},
+        upsert=True,
+    )
+    # Soft-cap collection at ~2000 entries; trim oldest above that.
+    try:
+        count = await db.bot_cycles.count_documents({})
+        if count > 2000:
+            cutoff = await db.bot_cycles.find({}, {"_id": 1, "timestamp": 1}).sort("timestamp", -1).skip(2000).limit(1).to_list(1)
+            if cutoff:
+                await db.bot_cycles.delete_many({"timestamp": {"$lt": cutoff[0]["timestamp"]}})
+    except Exception:
+        pass
+    return {"stored": bool(res.upserted_id), "duplicate": not bool(res.upserted_id)}
+
+
+@api_router.get("/bot-brain/cycles")
+async def bot_brain_list_cycles(limit: int = 15, worker: Optional[str] = None):
+    """Latest cycle decisions across both workers, newest first."""
+    q: dict = {}
+    if worker:
+        q["worker"] = worker
+    cursor = db.bot_cycles.find(q, {"_id": 0}).sort("timestamp", -1).limit(int(limit))
+    cycles = [c async for c in cursor]
+
+    # Compute quick stats for the panel header
+    counts = {"LONG": 0, "SHORT": 0, "HOLD": 0}
+    for c in cycles:
+        a = (c.get("action") or "").upper()
+        if a in counts:
+            counts[a] += 1
+    return {"cycles": cycles, "counts": counts, "as_of": datetime.now(timezone.utc).isoformat()}
+
+
 @api_router.post("/forex/chat")
 async def forex_chat(req: ForexChatRequest):
     session_id = req.session_id or str(uuid.uuid4())
