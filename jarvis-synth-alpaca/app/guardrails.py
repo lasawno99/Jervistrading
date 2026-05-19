@@ -179,9 +179,10 @@ def check_order(
         raise GuardrailRejection(msg)
 
     # 7
-    if state.recent_order_count(60.0, now=now) >= 5:
+    limit = int(os.environ.get("MAX_ORDERS_PER_MINUTE", "5"))
+    if state.recent_order_count(60.0, now=now) >= limit:
         raise GuardrailRejection(
-            "Rate limit: more than 5 orders in the last 60 seconds"
+            f"Rate limit: more than {limit} orders in the last 60 seconds"
         )
 
     state.record_order(now=now)

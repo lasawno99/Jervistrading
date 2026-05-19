@@ -63,6 +63,39 @@ CMC Pro API wired into the Dashboard via a thin 30px strip (regime · F&G · top
 ### Optional next step
 - Feed the `regime` signal into `jarvis-synth-alpaca` filter chain so workers skip new entries during CHOP regimes (would need `CMC_API_KEY` added to Railway service variables; user can decide later).
 
+## Scale-Up Prep (5 → 10 instruments) (2026-05-19, **NEW**)
+
+User chose **Option A — defer the scale-up until ~20 closed Railway trades validate filter edge**. Current data: 1 closed trade on `jarvis-synth`, 3 bot_cycles logged. Need ~7 more days at current cron.
+
+### Pre-staged so scaling is a 2-Variable Railway edit (no redeploy needed)
+
+The hard-coded `≥5 orders/minute → reject` rate limit (would have blocked a 10-instrument fanout) is now **configurable via env var**:
+
+- `/app/jarvis-synth/app/guardrails.py` line 184 — reads `MAX_ORDERS_PER_MINUTE` (default 5)
+- `/app/jarvis-synth-alpaca/app/guardrails.py` line 182 — same pattern
+- Both `.env.example` files documented with comments + new var
+
+### When ready to scale (~7 days from now)
+On each Railway service Variables tab, update:
+
+**`jarvis-synth` (OANDA Forex):**
+```
+INSTRUMENTS=EUR_USD,GBP_USD,USD_JPY,XAU_USD,USD_CHF,AUD_USD,NZD_USD,EUR_GBP,USD_CAD,EUR_JPY
+MAX_ORDERS_PER_MINUTE=10
+```
+
+**`jarvis-synth-alpaca` (Alpaca crypto/stocks):**
+```
+INSTRUMENTS=BTC/USD,ETH/USD,SOL/USD,AVAX/USD,LTC/USD,LINK/USD,NVDA,TSLA,AAPL,AMD
+MAX_ORDERS_PER_MINUTE=10
+```
+
+Railway auto-restarts on Variable save → new instruments take effect on the next cron tick. Zero code touched.
+
+### Verified
+- 44/44 pytest passing on both workers (no regressions from the rate-limit refactor)
+- Defaults preserved: existing deployments with no `MAX_ORDERS_PER_MINUTE` set keep the old `5` behavior
+
 # PRD — JARVIS Trading System (monorepo)
 
 ## Services in this repo
