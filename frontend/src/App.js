@@ -18,6 +18,7 @@ import OpenPositionsTable from "@/components/v2/OpenPositionsTable";
 import RecentTradesTable from "@/components/v2/RecentTradesTable";
 import BotBrainPanel from "@/components/v2/BotBrainPanel";
 import WinRateTrendCard from "@/components/v2/WinRateTrendCard";
+import RiskPostureCard from "@/components/v2/RiskPostureCard";
 import { RiskOffBanner, RiskOffSheet, useRiskStatus } from "@/components/v2/RiskOff";
 import AskJarvisModal from "@/components/v2/AskJarvisModal";
 import BottomNav from "@/components/v2/BottomNav";
@@ -187,12 +188,13 @@ export default function App() {
                   </p>
                 </div>
                 <WinRateTrendCard delay={0.05} />
+                <RiskPostureCard delay={0.1} />
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                  <AgentStatusCard delay={0.1} />
-                  <AutomationCard delay={0.15} />
-                  <TopSignalsCard delay={0.2} />
+                  <AgentStatusCard delay={0.15} />
+                  <AutomationCard delay={0.2} />
+                  <TopSignalsCard delay={0.25} />
                 </div>
-                <BotBrainPanel delay={0.25} />
+                <BotBrainPanel delay={0.3} />
               </div>
             )}
 

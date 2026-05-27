@@ -849,6 +849,147 @@ async def risk_override(payload: dict):
     return await rg.set_override(db, mode, by=by)
 
 
+@api_router.get("/risk/posture")
+async def risk_posture():
+    """Unified risk posture view: capabilities + protections + current exposure.
+
+    Answers: 'Can I make money on the way down? Is my risk being managed?'
+    """
+    import risk_gate as rg
+    rstatus = await rg.get_status(db)
+
+    all_data = await broker_all()
+    combined = all_data["combined"]
+    nav = float(combined.get("nav") or 0)
+    total_wealth = float(combined.get("total_wealth") or 0)
+
+    # Categorize current open positions by side (LONG vs SHORT)
+    longs, shorts = 0, 0
+    long_value, short_value = 0.0, 0.0
+    for broker_key in ("oanda", "alpaca", "sim"):
+        broker = all_data.get(broker_key) or {}
+        for p in broker.get("positions_detail") or []:
+            qty = float(p.get("qty") or 0)
+            value = abs(float(p.get("value") or qty * float(p.get("current") or 0)))
+            if qty < 0:
+                shorts += 1
+                short_value += value
+            elif qty > 0:
+                longs += 1
+                long_value += value
+
+    # Daily loss budget — 2% of NAV is the worker default DAILY_LOSS_LIMIT_PCT
+    daily_loss_pct = 2.0
+    budget = nav * (daily_loss_pct / 100.0)
+    day_pl = float(combined.get("unrealized_pl") or 0)
+    # Best effort: include today's realized P/L from closed_trades
+    from datetime import datetime as _dt, timezone as _tz
+    today_iso = _dt.now(_tz.utc).date().isoformat()
+    try:
+        realized_today = await db.closed_trades.aggregate([
+            {"$match": {"ts": {"$gte": today_iso}}},
+            {"$group": {"_id": None, "total": {"$sum": "$pl"}}},
+        ]).to_list(1)
+        day_pl += float((realized_today[0]["total"] if realized_today else 0) or 0)
+    except Exception:
+        pass
+
+    loss_consumed = max(0.0, -day_pl)  # only count losses
+    budget_remaining = max(0.0, budget - loss_consumed)
+    budget_used_pct = min(100.0, (loss_consumed / budget * 100.0) if budget > 0 else 0.0)
+
+    # Profit-lock baseline (sim's auto-lock is independent of worker locks)
+    sim_baseline = await db.sim_lock_baseline.find_one({"_id": "main"}, {"_id": 0})
+
+    return {
+        "downside_capability": {
+            "forex_short": {"enabled": True, "via": "OANDA SELL orders", "broker": "oanda"},
+            "stocks_short": {"enabled": True, "via": "Alpaca short-sell (margin)", "broker": "alpaca"},
+            "crypto_short": {"enabled": False, "reason": "Alpaca crypto is long-only (US regulation)", "broker": "alpaca"},
+            "kronos_predicts_downside": True,
+            "tauric_supports_short": True,
+        },
+        "protections": {
+            "risk_off_gate": {
+                "active": rstatus["active"],
+                "source": rstatus["source"],
+                "reason": rstatus["reason"],
+            },
+            "profit_lock": {
+                "threshold_pct": 5.0,
+                "policy": "Every +5% NAV gain auto-sweeps into Locked Profits ledger; baseline resets to new high-water mark.",
+                "total_locked": float(combined.get("locked_profits") or 0),
+            },
+            "daily_loss_halt": {
+                "limit_pct": daily_loss_pct,
+                "budget_usd": round(budget, 2),
+                "loss_consumed_usd": round(loss_consumed, 2),
+                "budget_remaining_usd": round(budget_remaining, 2),
+                "budget_used_pct": round(budget_used_pct, 2),
+            },
+            "confidence_floor": {
+                "tauric_min": 7,
+                "kronos_min": "medium",
+                "policy": "Trades only fire when Tauric ≥7/10 AND Kronos confidence ≥ medium.",
+            },
+            "min_rr_ratio": {
+                "low": 2.0, "mid": 2.5, "high": 3.0,
+                "policy": "Take-profit ≥ 2× stop-loss always; scales up with conviction.",
+            },
+            "rate_limit": {"max_orders_per_min": 5},
+        },
+        "current_exposure": {
+            "total_nav": nav,
+            "total_wealth": total_wealth,
+            "open_long_positions": longs,
+            "open_short_positions": shorts,
+            "long_notional": round(long_value, 2),
+            "short_notional": round(short_value, 2),
+            "directional_bias": (
+                "balanced" if longs == shorts
+                else "long-biased" if longs > shorts
+                else "short-biased"
+            ),
+        },
+        "improvement_gaps": [
+            {
+                "id": "conviction_scaling",
+                "label": "Conviction-scaled sizing",
+                "status": "missing",
+                "impact": "medium",
+                "current": "Fixed: HALF=50u or FULL=100u of base.",
+                "proposed": "Scale by Tauric confidence: 7→1.0x, 8→1.3x, 9→1.6x, 10→2.0x.",
+            },
+            {
+                "id": "atr_stops",
+                "label": "ATR-based dynamic stops",
+                "status": "missing",
+                "impact": "high",
+                "current": "Fixed 10-pip stop on ALL instruments — too tight on XAU, too loose on JPY pairs.",
+                "proposed": "Stop = 1.5×ATR(14); take-profit = R:R × stop. Adapts per instrument & volatility.",
+            },
+            {
+                "id": "vol_adjusted_sizing",
+                "label": "Volatility-adjusted sizing",
+                "status": "missing",
+                "impact": "medium",
+                "current": "Kronos vol_amp only blocks (>2.0x); doesn't shrink size between 1.3-2.0x.",
+                "proposed": "When 1.3<vol_amp<2.0, multiply units by 0.5. Lower drawdown during chop.",
+            },
+            {
+                "id": "trailing_stops",
+                "label": "Trailing stops",
+                "status": "missing",
+                "impact": "high",
+                "current": "Stops are static. Winners give back gains if price reverses.",
+                "proposed": "Once +1R unrealized: move stop to breakeven. +2R: trail at +1R.",
+            },
+        ],
+        "as_of": _dt.now(_tz.utc).isoformat(),
+        "sim_lock_baseline": sim_baseline.get("baseline") if sim_baseline else None,
+    }
+
+
 @api_router.get("/dashboard/sparkline")
 async def dashboard_sparkline(metric: str = "equity"):
     """30-point sparkline series for hero KPI cards.
