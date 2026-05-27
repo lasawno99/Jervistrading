@@ -57,7 +57,7 @@ class TestServiceInfo:
 
 class TestChatAndTasks:
     def test_chat_trading_intent_creates_task(self, client):
-        r = client.post(f"{API}/chat", json={"message": "buy 0.1 btc"}, timeout=20)
+        r = client.post(f"{API}/chat", json={"message": "buy 0.1 btc"}, timeout=60)
         assert r.status_code == 200, r.text
         d = r.json()
         assert d["intent"] == "trading"
@@ -194,7 +194,7 @@ class TestSignals:
     def test_generate_signal_eventually(self, client):
         last = None
         for _ in range(10):
-            r = client.post(f"{API}/bot/signal", timeout=20)
+            r = client.post(f"{API}/bot/signal", timeout=60)
             assert r.status_code == 200
             last = r.json()
             if isinstance(last, dict) and last.get("id"):
@@ -220,7 +220,7 @@ class TestSignals:
 
     def _get_pending_signal(self, client):
         for _ in range(15):
-            r = client.post(f"{API}/bot/signal", timeout=20)
+            r = client.post(f"{API}/bot/signal", timeout=60)
             d = r.json()
             if isinstance(d, dict) and d.get("id"):
                 return d

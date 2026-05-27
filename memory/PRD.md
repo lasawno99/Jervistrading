@@ -134,6 +134,40 @@ DASHBOARD_RISK_STATUS_URL=https://your-dashboard.preview.emergentagent.com/api/r
 ```
 Workers restart, and from then on every cycle does a 4s HTTP check before opening a new entry. No other changes needed.
 
+## Risk Engine Upgrades — ATR Stops + Trailing Stops (2026-05-27, **NEW**)
+
+Shipped Gaps #1 and #2 from the Risk Posture audit. Both workers now use volatility-adaptive stops + auto-tighten winners.
+
+### Gap #1 — ATR-based dynamic stops
+- New `/app/jarvis-synth*/app/indicators.py` (mirrored across both workers).
+  - `atr(bars, period=14)` — Wilder ATR, pandas only, returns None on insufficient data.
+  - `pip_size(instrument)` — handles JPY pairs + XAU/XAG correctly.
+  - `adaptive_sl_pips(bars, instrument)` → forex (clamped 6-80 pips).
+  - `adaptive_sl_pct(bars)` → Alpaca crypto/stocks (clamped 0.5-8%).
+- `main.py` execution sites replace hard-coded `sl_pips=10.0` with the adaptive version; falls back to 10 if ATR can't be computed.
+
+### Gap #2 — Trailing stops
+- New `/app/jarvis-synth*/app/trailing_stops.py` (mirrored).
+  - Pure `decide(trade, current_price)` function — easy to pytest.
+  - Logic: at +1R move stop to entry (breakeven). At +2R, trail stop to +1R locked. One-way ratchet — never widens.
+- Executor additions:
+  - `OandaExecutor.list_open_trades()` + `update_trade_stop()` via `v20_trades.TradeCRCDO`.
+  - `AlpacaExecutor.list_open_trades()` + `update_trade_stop()` — cancels existing bracket SL child, posts a new `StopOrderRequest`. Crypto symbols correctly return `{status:'skipped'}`.
+- Heartbeat: `asyncio.create_task(trailing_heartbeat(...))` every `TRAILING_STOP_INTERVAL_SECONDS` (default 300s). Telegram alert on each tightening with reason.
+
+### Dashboard reflection
+- `/api/risk/posture` improvement_gaps now reports `status: 'shipped'` for `atr_stops` + `trailing_stops`.
+- Risk Posture card header reads "Risk Engine Upgrades (2/4 shipped)"; shipped items get green check + green SHIPPED badge.
+
+### Verified
+- **Worker pytests: 64/64 each** (was 44/44; +20 new = 11 indicators + 9 trailing). Total: 128/128.
+- Testing agent: 100% backend + frontend pass. No regressions on existing endpoints.
+- Pre-existing 20s timeout in `test_jarvis_backend.py` bumped to 60s per agent's flake report.
+
+### Remaining gaps (2/4)
+- `conviction_scaling` (medium impact): scale base units by Tauric confidence 7→1.0x, 8→1.3x, 9→1.6x, 10→2.0x.
+- `vol_adjusted_sizing` (medium impact): when Kronos vol_amp is 1.3-2.0x, multiply units by 0.5.
+
 # PRD — JARVIS Trading System (monorepo)
 
 ## Services in this repo
