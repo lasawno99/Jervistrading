@@ -1,0 +1,40 @@
+{
+  "summary": "Tested Risk-Off feature end-to-end: backend endpoints (status/override with all modes + invalid input), auto-evaluation logic with monkeypatched CMC signals, frontend banner+sheet+regime pill flow at 393x852, and worker pytests (44/44 each in jarvis-synth and jarvis-synth-alpaca). Reset override to 'auto' as required.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Risk-Off banner state sync after sheet toggle",
+        "issue": "RiskOffBanner (App.js) uses its own useRiskStatus hook (60s poll). When the user clicks 'risk-mode-off' inside the RiskOffSheet, the sheet's hook updates to active=false, but the outer banner keeps showing 'RISK-OFF ACTIVE' until the next 60s poll. The banner and sheet should share state (lift hook to App.js or call refresh on sheet close).",
+        "affected_selectors": ["[data-testid='risk-off-banner']", "[data-testid='risk-mode-off']", "[data-testid='risk-mode-on']", "[data-testid='risk-mode-auto']"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_risk_gate.py",
+    "/app/test_reports/pytest/risk_gate_results.xml"
+  ],
+  "action_items": [
+    "Optional: lift useRiskStatus into App.js (single instance) and pass status + setMode into both RiskOffBanner and RiskOffSheet, OR have RiskOffSheet call props.onStatusChange after setMode so the parent's banner refreshes immediately instead of waiting up to 60s."
+  ],
+  "critical_code_review_comments": [
+    "Banner/Sheet duplicated useRiskStatus instances cause stale-state UX (60s lag after toggling mode). Recommend single source of truth.",
+    "risk_gate._evaluate_auto regime computation is internal-only and doesn't reuse market_routes regime logic — minor duplication risk if thresholds drift apart.",
+    "Worker risk_gate.check has no caching; if workers tick fast they will hit /api/risk/status with no client-side TTL — backend cmc_client TTL=75s protects CMC quota but a small worker-side cache (e.g., 30s) would reduce dashboard load."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_risk_gate.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "90%"},
+  "test_credentials": "none required",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Override is reset to 'auto'. Current live signals: regime=bear, fg_value=36 → active=false. To force banner visible for any retest: POST /api/risk/override {mode:'on'}. ALWAYS reset to {mode:'auto'} after testing. The banner state-sync issue is the only outstanding integration gap; backend + worker tests all green (8/8 backend, 44/44 + 44/44 workers).",
+  "rca of the issue": "RiskOffBanner is mounted in App.js using its own useRiskStatus() instance. RiskOffSheet mounts a SEPARATE useRiskStatus() instance. They do not share React state. When the sheet calls setMode('off'), only the sheet's internal status updates; the App.js banner's status remains stale until its 60s interval fires. Mitigation: hoist useRiskStatus once in App.js and pass {status, setMode} as props to both components. Alternatively, add an onChange callback in RiskOffSheet that App.js uses to call its hook's refresh()."
+}

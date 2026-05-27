@@ -29,6 +29,7 @@ from app.guardrails import GuardrailState
 from app.kronos_client import KronosForecaster
 from app.news_scout import NewsScout
 from app.profit_lock import ProfitLock, format_lock_alert
+from app.risk_gate import check as risk_gate_check
 from app.signal import build_signal
 from app.status_server import build_app as build_status_app, start_in_thread as start_status_server
 from app.synth import synthesize
@@ -126,28 +127,45 @@ async def run_pipeline(
         # data only), indicator confluence, session/volatility. Reject weak setups.
         filter_records = []
         if decision.action in ("LONG", "SHORT"):
-            allowed, filter_records = run_pre_tauric_filters(
-                instrument=instrument,
-                proposed_direction=decision.action,
-                primary_bars=hist,
-                mtf_bars=None,
-                asset_kind="auto",  # Alpaca trades crypto + stocks
-            )
-            if not allowed:
-                rejection_reason = "; ".join(
-                    r["reason"] for r in filter_records if not r["allowed"]
-                )
+            # Layer 4a: Dashboard Risk-Off gate (CMC regime + Fear&Greed driven)
+            gate = await risk_gate_check()
+            if not gate.allowed:
                 log.info(
-                    "layer4b_filter_rejected",
+                    "layer4a_risk_off_veto",
                     instrument=instrument,
                     action_proposed=decision.action,
-                    reason=rejection_reason,
+                    reason=gate.reason,
+                    source=gate.source,
                 )
+                filter_records.append({"name": "risk_off_gate", "allowed": False, "reason": gate.reason})
                 decision = decision.__class__(
                     action="HOLD",
                     units=0,
-                    reasoning=f"Filter veto: {rejection_reason}",
+                    reasoning=f"Risk-Off: {gate.reason}",
                 ) if hasattr(decision, "__class__") else decision
+            else:
+                allowed, filter_records = run_pre_tauric_filters(
+                    instrument=instrument,
+                    proposed_direction=decision.action,
+                    primary_bars=hist,
+                    mtf_bars=None,
+                    asset_kind="auto",  # Alpaca trades crypto + stocks
+                )
+                if not allowed:
+                    rejection_reason = "; ".join(
+                        r["reason"] for r in filter_records if not r["allowed"]
+                    )
+                    log.info(
+                        "layer4b_filter_rejected",
+                        instrument=instrument,
+                        action_proposed=decision.action,
+                        reason=rejection_reason,
+                    )
+                    decision = decision.__class__(
+                        action="HOLD",
+                        units=0,
+                        reasoning=f"Filter veto: {rejection_reason}",
+                    ) if hasattr(decision, "__class__") else decision
 
         if cycle_log is not None:
             try:

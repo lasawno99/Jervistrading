@@ -829,6 +829,26 @@ async def dashboard_win_rate_trend(days: int = 14):
     }
 
 
+@api_router.get("/risk/status")
+async def risk_status():
+    """Current risk-gate status — used by dashboard banner + worker pre-trade check."""
+    import risk_gate as rg
+    return await rg.get_status(db)
+
+
+@api_router.post("/risk/override")
+async def risk_override(payload: dict):
+    """Set manual override. payload = {mode: 'on'|'off'|'auto'}.
+    'auto' clears the override and returns to CMC-driven evaluation.
+    """
+    import risk_gate as rg
+    mode = (payload or {}).get("mode") or "auto"
+    if mode not in ("on", "off", "auto"):
+        raise HTTPException(status_code=400, detail="mode must be on|off|auto")
+    by = (payload or {}).get("by") or "dashboard-user"
+    return await rg.set_override(db, mode, by=by)
+
+
 @api_router.get("/dashboard/sparkline")
 async def dashboard_sparkline(metric: str = "equity"):
     """30-point sparkline series for hero KPI cards.

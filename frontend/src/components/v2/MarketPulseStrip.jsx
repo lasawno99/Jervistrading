@@ -28,7 +28,7 @@ const REGIME_META = {
  * Single ~36px row — designed to slip between TodayProfitHero and the cluster
  * without breaking the single-screen mobile constraint.
  */
-export const MarketPulseStrip = ({ delay = 0.15 }) => {
+export const MarketPulseStrip = ({ delay = 0.15, onRegimeClick }) => {
   const [regime, setRegime] = useState(null);
   const [fg, setFg] = useState(null);
   const [movers, setMovers] = useState(null);
@@ -79,17 +79,20 @@ export const MarketPulseStrip = ({ delay = 0.15 }) => {
       transition={{ duration: 0.45, delay, ease: [0.22, 1, 0.36, 1] }}
       data-testid="market-pulse-strip"
     >
-      {/* Regime pill */}
-      <div
-        className="flex items-center gap-1 px-2 py-1 rounded-full flex-shrink-0"
+      {/* Regime pill — clickable to open Risk-Off sheet */}
+      <button
+        type="button"
+        onClick={onRegimeClick}
+        className="flex items-center gap-1 px-2 py-1 rounded-full flex-shrink-0 hover:scale-105 transition"
         style={{ background: regimeMeta.bg, border: `1px solid ${regimeMeta.border}` }}
         data-testid="market-regime-pill"
+        aria-label="Open Risk-Off controls"
       >
         {RegimeIcon && <RegimeIcon size={11} style={{ color: regimeMeta.color }} />}
         <span className="text-[10px] font-semibold tracking-[0.12em]" style={{ color: regimeMeta.color }}>
           {regimeMeta.label}
         </span>
-      </div>
+      </button>
 
       {/* Fear & Greed chip */}
       {fgInfo && (

@@ -18,6 +18,7 @@ import OpenPositionsTable from "@/components/v2/OpenPositionsTable";
 import RecentTradesTable from "@/components/v2/RecentTradesTable";
 import BotBrainPanel from "@/components/v2/BotBrainPanel";
 import WinRateTrendCard from "@/components/v2/WinRateTrendCard";
+import { RiskOffBanner, RiskOffSheet, useRiskStatus } from "@/components/v2/RiskOff";
 import AskJarvisModal from "@/components/v2/AskJarvisModal";
 import BottomNav from "@/components/v2/BottomNav";
 
@@ -72,8 +73,10 @@ export default function App() {
   const [sessionId, setSessionId] = useState(null);
   const [tab, setTab] = useState("dashboard");
   const [askOpen, setAskOpen] = useState(false);
+  const [riskOpen, setRiskOpen] = useState(false);
   const [lastReply, setLastReply] = useState("");
   const [voiceEnabled] = useState(true);
+  const { status: riskStatus } = useRiskStatus(60000);
 
   const handleCommand = useCallback(async (text) => {
     setBusy(true);
@@ -150,8 +153,9 @@ export default function App() {
           >
             {tab === "dashboard" && (
               <div className="space-y-3">
+                <RiskOffBanner status={riskStatus} onOpenControls={() => setRiskOpen(true)} />
                 <TodayProfitHero />
-                <MarketPulseStrip />
+                <MarketPulseStrip onRegimeClick={() => setRiskOpen(true)} />
                 <TradingPeersCluster onSelect={onPeerSelect} />
                 <BrokerCarousel />
               </div>
@@ -236,6 +240,8 @@ export default function App() {
         onToggleVoice={toggleVoice}
         lastReply={lastReply}
       />
+
+      <RiskOffSheet open={riskOpen} onClose={() => setRiskOpen(false)} />
     </div>
   );
 }
