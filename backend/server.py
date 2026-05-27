@@ -963,10 +963,10 @@ async def risk_posture():
             {
                 "id": "atr_stops",
                 "label": "ATR-based dynamic stops",
-                "status": "missing",
+                "status": "shipped",
                 "impact": "high",
-                "current": "Fixed 10-pip stop on ALL instruments — too tight on XAU, too loose on JPY pairs.",
-                "proposed": "Stop = 1.5×ATR(14); take-profit = R:R × stop. Adapts per instrument & volatility.",
+                "current": "Live: SL = 1.5×ATR(14), clamped 6-80 pips (FX) or 0.5-8% (Alpaca).",
+                "proposed": "Already adaptive per instrument & volatility.",
             },
             {
                 "id": "vol_adjusted_sizing",
@@ -979,10 +979,10 @@ async def risk_posture():
             {
                 "id": "trailing_stops",
                 "label": "Trailing stops",
-                "status": "missing",
+                "status": "shipped",
                 "impact": "high",
-                "current": "Stops are static. Winners give back gains if price reverses.",
-                "proposed": "Once +1R unrealized: move stop to breakeven. +2R: trail at +1R.",
+                "current": "Live: heartbeat ratchets SL to breakeven at +1R, to +1R at +2R (one-way only).",
+                "proposed": "Active on both workers every 5 min.",
             },
         ],
         "as_of": _dt.now(_tz.utc).isoformat(),

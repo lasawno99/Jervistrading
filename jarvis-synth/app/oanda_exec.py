@@ -14,6 +14,7 @@ from oandapyV20.endpoints import accounts as v20_accounts
 from oandapyV20.endpoints import orders as v20_orders
 from oandapyV20.endpoints import positions as v20_positions
 from oandapyV20.endpoints import pricing as v20_pricing
+from oandapyV20.endpoints import trades as v20_trades
 
 from app.guardrails import (
     AccountState,
@@ -216,3 +217,44 @@ class OandaExecutor:
             "fill_price": fill.get("price"),
             "transaction_id": fill.get("id"),
         }
+
+    # Trailing-stop helpers ---------------------------------------------
+
+    def list_open_trades(self):
+        """Return open trades with id, side, units, entry, current_sl, unrealized."""
+        req = v20_trades.OpenTrades(accountID=self._account_id)
+        resp = self._client.request(req)
+        out = []
+        for t in resp.get("trades", []):
+            units = float(t.get("currentUnits", 0) or 0)
+            entry = float(t.get("price", 0) or 0)
+            sl = None
+            sl_order = t.get("stopLossOrder") or {}
+            if sl_order:
+                sl = float(sl_order.get("price")) if sl_order.get("price") else None
+            out.append({
+                "trade_id": t.get("id"),
+                "instrument": t.get("instrument"),
+                "side": "buy" if units > 0 else "sell",
+                "units": units,
+                "entry": entry,
+                "stop_loss": sl,
+                "unrealized_pl": float(t.get("unrealizedPL", 0) or 0),
+            })
+        return out
+
+    def update_trade_stop(self, trade_id: str, new_stop_price: float) -> Dict[str, Any]:
+        """Modify (or set) the stop-loss on an existing open trade."""
+        body = {"stopLoss": {"price": f"{new_stop_price:.5f}", "timeInForce": "GTC"}}
+        try:
+            r = v20_trades.TradeCRCDO(
+                accountID=self._account_id,
+                tradeID=trade_id,
+                data=body,
+            )
+            resp = self._client.request(r)
+        except Exception as e:
+            log.error("trade_stop_update_failed", trade_id=trade_id, error=str(e))
+            return {"status": "error", "reason": str(e)}
+        log.info("trade_stop_updated", trade_id=trade_id, new_sl=new_stop_price)
+        return {"status": "ok", "trade_id": trade_id, "new_stop": new_stop_price, "resp": bool(resp)}

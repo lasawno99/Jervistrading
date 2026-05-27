@@ -196,35 +196,45 @@ export const RiskPostureCard = ({ delay = 0.1 }) => {
       {gaps.length > 0 && (
         <div>
           <div className="text-[10px] tracking-[0.12em] uppercase text-white/40 mb-2 flex items-center gap-1.5">
-            <AlertTriangle size={11} /> Improvement Opportunities ({gaps.length})
+            <AlertTriangle size={11} /> Risk Engine Upgrades ({gaps.filter(g => g.status === "shipped").length}/{gaps.length} shipped)
           </div>
           <div className="space-y-1.5" data-testid="improvement-gaps">
-            {gaps.map((g) => (
+            {gaps.map((g) => {
+              const shipped = g.status === "shipped";
+              return (
               <details key={g.id} className="group">
                 <summary
                   className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg cursor-pointer"
                   style={{
-                    background: "rgba(245,158,11,0.06)",
-                    border: "1px solid rgba(245,158,11,0.18)",
+                    background: shipped ? "rgba(34,197,94,0.06)" : "rgba(245,158,11,0.06)",
+                    border: `1px solid ${shipped ? "rgba(34,197,94,0.24)" : "rgba(245,158,11,0.18)"}`,
                   }}
                 >
-                  <span className="text-[12px] font-medium text-white/90">{g.label}</span>
+                  <span className="text-[12px] font-medium text-white/90 flex items-center gap-1.5">
+                    {shipped && <Check size={11} strokeWidth={3} style={{ color: "var(--up)" }} />}
+                    {g.label}
+                  </span>
                   <span
                     className="text-[9px] tracking-[0.1em] uppercase px-1.5 py-0.5 rounded font-semibold"
                     style={{
-                      background: g.impact === "high" ? "rgba(239,68,68,0.18)" : "rgba(245,158,11,0.18)",
-                      color: g.impact === "high" ? "var(--down)" : "var(--warn)",
+                      background: shipped
+                        ? "rgba(34,197,94,0.20)"
+                        : g.impact === "high" ? "rgba(239,68,68,0.18)" : "rgba(245,158,11,0.18)",
+                      color: shipped
+                        ? "var(--up)"
+                        : g.impact === "high" ? "var(--down)" : "var(--warn)",
                     }}
                   >
-                    {g.impact} impact
+                    {shipped ? "shipped" : `${g.impact} impact`}
                   </span>
                 </summary>
                 <div className="px-3 py-2 text-[11px] text-white/65 leading-relaxed">
-                  <div className="mb-1"><span className="text-white/45">Now:</span> {g.current}</div>
-                  <div><span className="text-white/45">Proposed:</span> {g.proposed}</div>
+                  <div className="mb-1"><span className="text-white/45">{shipped ? "Live:" : "Now:"}</span> {g.current}</div>
+                  <div><span className="text-white/45">{shipped ? "Spec:" : "Proposed:"}</span> {g.proposed}</div>
                 </div>
               </details>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

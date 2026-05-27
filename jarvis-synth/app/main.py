@@ -28,6 +28,7 @@ from app.oanda_exec import OandaExecutor
 from app.oanda_fetch import OandaFetcher
 from app.profit_lock import ProfitLock, format_lock_alert
 from app.risk_gate import check as risk_gate_check
+from app.indicators import adaptive_sl_pips
 from app.signal import build_signal
 from app.status_server import build_app as build_status_app, start_in_thread as start_status_server
 from app.synth import synthesize
@@ -200,6 +201,9 @@ async def run_pipeline(
         # Tightened R:R brackets (was 2.5/2.0/1.5) — minimum 2.0 always so even
         # at 35% win-rate the expectancy stays positive.
         rr = 3.0 if verdict.confidence >= 9 else (2.5 if verdict.confidence >= 7 else 2.0)
+        # ATR-adaptive stop: each instrument gets a SL sized to its own volatility.
+        # Falls back to the legacy 10-pip stop only if ATR can't be computed.
+        sl_pips = adaptive_sl_pips(hist, instrument, multiplier=1.5) or 10.0
         result = await asyncio.to_thread(
             executor.execute,
             instrument=instrument,
@@ -207,9 +211,9 @@ async def run_pipeline(
             units=decision.units,
             rationale=decision.reasoning[:200],
             rr_ratio=rr,
-            sl_pips=10.0,
+            sl_pips=sl_pips,
         )
-        log.info("layer5_execution", instrument=instrument, result=result)
+        log.info("layer5_execution", instrument=instrument, sl_pips=sl_pips, rr=rr, result=result)
         try:
             await bot.send_message(
                 chat_id=cfg.telegram_chat_id,
@@ -435,6 +439,31 @@ async def main_async() -> None:
         max_instances=1,
         coalesce=True,
     )
+
+    # Trailing-stops heartbeat: every TRAILING_STOP_INTERVAL_SECONDS, walks open
+    # trades and ratchets SL toward breakeven / +1R. One-way only — never widens.
+    from app.trailing_stops import heartbeat_loop as trailing_heartbeat
+    trailing_interval = int(os.environ.get("TRAILING_STOP_INTERVAL_SECONDS", "300"))
+
+    async def _trailing_alert(acted):
+        if not acted or not cfg.telegram_chat_id:
+            return
+        lines = [f"🪜 Trailing stop tightened ({len(acted)})"]
+        for a in acted[:5]:
+            lines.append(f"• {a['instrument']} {a.get('reason','')} → SL {a['new_sl']:.5f}")
+        try:
+            await bot.send_message(chat_id=cfg.telegram_chat_id, text="\n".join(lines))
+        except Exception:
+            pass
+
+    asyncio.create_task(trailing_heartbeat(
+        interval_seconds=trailing_interval,
+        list_trades=executor.list_open_trades,
+        price_lookup=executor.get_price,
+        update_stop=executor.update_trade_stop,
+        on_action=_trailing_alert,
+    ))
+    log.info("trailing_stops_armed", interval_seconds=trailing_interval)
 
     # Daily summary: 23:55 UTC every day — captures end-of-day NAV before midnight rollover
     scheduler.add_job(

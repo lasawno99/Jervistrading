@@ -1,0 +1,44 @@
+{
+  "summary": "Validated downside risk-reduction shipment (Gap #1 ATR-based dynamic stops + Gap #2 Trailing stops) across both Railway workers (jarvis-synth, jarvis-synth-alpaca), backend /api/risk/posture, and the dashboard Risk Posture card. Worker pytests 64/64 + 64/64 (was 44/44 each baseline; +20 new from 11 indicators + 9 trailing_stops tests). Backend gap status correctly reports 'shipped' for atr_stops + trailing_stops, 'missing' for the other 2. Frontend renders 'Risk Engine Upgrades (2/4 shipped)' with green check + SHIPPED badge for the two shipped gaps. No regression on /api/risk/status, /api/dashboard/hero, /api/dashboard/win-rate-trend, /api/market/regime, /api/market/fear-greed. Mobile zero-scroll rule on Dashboard (393x852) still holds (scrollHeight == clientHeight == 852).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/bot/status, /api/signals/generate, /", "issue": "Pre-existing intermittent ReadTimeout when running test_jarvis_backend.py in full sequence (20s timeout) — endpoints return 200 fast in isolation (~130ms). Not related to this PR; same timeouts existed prior. Recommend bumping requests timeout in test_jarvis_backend.py to 60s."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/pytest/jarvis_synth_results.xml",
+    "/app/test_reports/pytest/jarvis_synth_alpaca_results.xml",
+    "/app/test_reports/pytest/backend_results.xml",
+    "/app/jarvis-synth/tests/test_indicators.py",
+    "/app/jarvis-synth/tests/test_trailing_stops.py",
+    "/app/jarvis-synth-alpaca/tests/test_indicators.py",
+    "/app/jarvis-synth-alpaca/tests/test_trailing_stops.py"
+  ],
+  "action_items": [
+    "(Optional) Bump requests timeout in /app/backend/tests/test_jarvis_backend.py from 20s -> 60s to eliminate flaky timeouts on slow endpoints when run in sequence.",
+    "(Cosmetic, not blocking) Spec said 'green SHIPPED badge' — implementation uses lowercase 'shipped' in source which CSS uppercases visually. Final rendered text reads 'SHIPPED'. Matches spec visually."
+  ],
+  "critical_code_review_comments": [
+    "indicators.py is clean, pure, dependency-free (pandas only). Good clamp logic on adaptive_sl_pips (6-80 pips) and adaptive_sl_pct (0.5-8%). Returns None on insufficient bars so caller falls back to default — main.py handles with `or 10.0` / `or 1.0` fallback. Solid.",
+    "trailing_stops.decide() is a pure function — easy to test, no IO. The 9 pytest cases cover buy/sell, breakeven at 1R, trailing at 2R, ratchet (no widening), zero-R, missing sl. Comprehensive.",
+    "OANDA executor.update_trade_stop uses v20_trades.TradeCRCDO (correct PATCH endpoint for stop modification). list_open_trades flattens stopLoss + unrealized PL from /openTrades response — clean shape for trailing_heartbeat.",
+    "Alpaca executor handles crypto correctly: list_open_trades skips crypto symbols for stop_loss cross-reference, update_trade_stop returns {status:'skipped', reason:'crypto no SL support'}. Good edge-case handling.",
+    "Trailing heartbeat task launched via asyncio.create_task inside main loop on both workers — interval driven by TRAILING_STOP_INTERVAL_SECONDS env (default 300s). Non-blocking, won't stall main signal cycle.",
+    "Backend /api/risk/posture improvement_gaps array shape {id,label,status,impact,current,proposed} is consistent. Status field accepts 'shipped' | 'missing'. Frontend conditional on g.status === 'shipped' renders correctly.",
+    "From prior iteration (iteration_4): RiskOffBanner/RiskOffSheet duplicated useRiskStatus instance still causes 60s state-sync lag — unchanged here, not part of this PR but worth tracking."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (risk/posture + 5 regression endpoints all 200; pytest flakes unrelated)", "frontend": "100%"},
+  "test_credentials": "none required",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Worker pytests: jarvis-synth 64/64, jarvis-synth-alpaca 64/64 (run from each dir with `python -m pytest -q`). Risk posture shipped gaps: atr_stops + trailing_stops. Remaining 'missing' gaps: conviction_scaling + vol_adjusted_sizing. Risk override currently 'auto', regime=BEAR, fear_greed=35 (banner inactive). Mobile Dashboard zero-scroll verified at 393x852.",
+  "rca of the issue": "No bugs found in this iteration. Pre-existing flaky timeouts in /app/backend/tests/test_jarvis_backend.py (3 failures: TestServiceInfo.test_root_service_info, TestBotStatus.test_bot_status, TestSignals.test_generate_signal_eventually) are due to a hardcoded 20s requests timeout that is too tight when the suite runs sequentially through 33 tests. Endpoints respond in ~130ms when hit in isolation. Mitigation: raise timeout to 60s or move slow tests to a separate file."
+}

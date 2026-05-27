@@ -30,6 +30,7 @@ from app.kronos_client import KronosForecaster
 from app.news_scout import NewsScout
 from app.profit_lock import ProfitLock, format_lock_alert
 from app.risk_gate import check as risk_gate_check
+from app.indicators import adaptive_sl_pct
 from app.signal import build_signal
 from app.status_server import build_app as build_status_app, start_in_thread as start_status_server
 from app.synth import synthesize
@@ -197,9 +198,11 @@ async def run_pipeline(
         if decision.action == "HOLD":
             continue
         side = "buy" if decision.action == "LONG" else "sell"
-        # Tightened R:R — minimum 2.0 (was 1.5). For Alpaca crypto the sl_pips
-        # value is interpreted as a percent of price, so 1.0 = 1% SL distance.
+        # Tightened R:R — minimum 2.0 (was 1.5). For Alpaca the sl_pips field is
+        # interpreted by the executor as a percent of price (1.0 = 1% SL distance).
+        # ATR-adaptive: each symbol gets a SL sized to its own volatility.
         rr = 3.0 if verdict.confidence >= 9 else (2.5 if verdict.confidence >= 7 else 2.0)
+        sl_pct = adaptive_sl_pct(hist, multiplier=1.5) or 1.0
         result = await asyncio.to_thread(
             executor.execute,
             instrument=instrument,
@@ -207,9 +210,9 @@ async def run_pipeline(
             units=decision.units,
             rationale=decision.reasoning[:200],
             rr_ratio=rr,
-            sl_pips=10.0,
+            sl_pips=sl_pct,
         )
-        log.info("layer5_execution", instrument=instrument, result=result)
+        log.info("layer5_execution", instrument=instrument, sl_pct=sl_pct, rr=rr, result=result)
         try:
             await bot.send_message(
                 chat_id=cfg.telegram_chat_id,
@@ -436,6 +439,32 @@ async def main_async() -> None:
         max_instances=1,
         coalesce=True,
     )
+
+    # Trailing-stops heartbeat: every TRAILING_STOP_INTERVAL_SECONDS, walks open
+    # trades and ratchets SL toward breakeven / +1R. One-way only — never widens.
+    # Crypto positions skipped (Alpaca paper doesn't support stops on crypto).
+    from app.trailing_stops import heartbeat_loop as trailing_heartbeat
+    trailing_interval = int(os.environ.get("TRAILING_STOP_INTERVAL_SECONDS", "300"))
+
+    async def _trailing_alert(acted):
+        if not acted or not cfg.telegram_chat_id:
+            return
+        lines = [f"🪜 Trailing stop tightened ({len(acted)})"]
+        for a in acted[:5]:
+            lines.append(f"• {a['instrument']} {a.get('reason','')} → SL {a['new_sl']:.2f}")
+        try:
+            await bot.send_message(chat_id=cfg.telegram_chat_id, text="\n".join(lines))
+        except Exception:
+            pass
+
+    asyncio.create_task(trailing_heartbeat(
+        interval_seconds=trailing_interval,
+        list_trades=executor.list_open_trades,
+        price_lookup=executor.get_price,
+        update_stop=executor.update_trade_stop,
+        on_action=_trailing_alert,
+    ))
+    log.info("trailing_stops_armed", interval_seconds=trailing_interval)
 
     # Daily summary: 23:55 UTC every day — captures end-of-day NAV before midnight rollover
     scheduler.add_job(

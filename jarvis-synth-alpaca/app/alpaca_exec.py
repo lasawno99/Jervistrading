@@ -280,3 +280,92 @@ class AlpacaExecutor:
             "fill_price": fill_price,
             "transaction_id": str(resp.id),
         }
+
+    # ------- trailing-stop helpers --------------------------------------
+
+    def list_open_trades(self):
+        """Return open positions enriched with their bracket SL order info.
+
+        Crypto positions report `stop_loss=None` (no bracket on Alpaca paper);
+        trailing logic will skip them.
+        """
+        try:
+            positions = self._trading.get_all_positions()
+        except Exception as e:
+            log.warning("alpaca_positions_failed", error=str(e))
+            return []
+
+        # Index any open stop orders by their parent symbol for stocks
+        sl_by_symbol: Dict[str, Any] = {}
+        try:
+            from alpaca.trading.enums import QueryOrderStatus
+            from alpaca.trading.requests import GetOrdersRequest
+            req = GetOrdersRequest(status=QueryOrderStatus.OPEN, limit=200)
+            for o in self._trading.get_orders(filter=req) or []:
+                otype = str(getattr(o, "order_type", "")).lower()
+                if "stop" in otype:
+                    sl_by_symbol[str(o.symbol)] = o
+        except Exception as e:
+            log.warning("alpaca_orders_lookup_failed", error=str(e))
+
+        out = []
+        for p in positions:
+            symbol = str(p.symbol)
+            qty = float(p.qty)
+            avg_entry = float(p.avg_entry_price)
+            side = "buy" if qty > 0 else "sell"
+            sl_order = sl_by_symbol.get(symbol)
+            sl_price = float(sl_order.stop_price) if (sl_order and getattr(sl_order, "stop_price", None)) else None
+            out.append({
+                "trade_id": symbol,  # We key by symbol on Alpaca (one position per symbol)
+                "instrument": symbol,
+                "side": side,
+                "units": abs(qty),
+                "entry": avg_entry,
+                "stop_loss": sl_price,
+                "stop_order_id": str(sl_order.id) if sl_order else None,
+                "unrealized_pl": float(getattr(p, "unrealized_pl", 0) or 0),
+            })
+        return out
+
+    def update_trade_stop(self, trade_id: str, new_stop_price: float) -> Dict[str, Any]:
+        """Cancel the existing bracket SL child order and place a fresh stop order.
+
+        `trade_id` here is the symbol (Alpaca model). Crypto symbols are no-ops
+        because Alpaca paper doesn't support stop orders on crypto.
+        """
+        symbol = trade_id
+        if _is_crypto(symbol):
+            return {"status": "skipped", "reason": "crypto no SL support"}
+
+        try:
+            from alpaca.trading.enums import OrderSide, QueryOrderStatus, TimeInForce
+            from alpaca.trading.requests import GetOrdersRequest, StopOrderRequest
+
+            # Find existing SL for this symbol and cancel it
+            req = GetOrdersRequest(status=QueryOrderStatus.OPEN, limit=200, symbols=[symbol])
+            for o in self._trading.get_orders(filter=req) or []:
+                if "stop" in str(getattr(o, "order_type", "")).lower():
+                    try:
+                        self._trading.cancel_order_by_id(str(o.id))
+                    except Exception as e:
+                        log.warning("alpaca_cancel_sl_failed", order_id=str(o.id), error=str(e))
+
+            # Determine the side of the protective stop (opposite of position)
+            position = self._trading.get_open_position(symbol)
+            pos_qty = float(position.qty)
+            protect_side = OrderSide.SELL if pos_qty > 0 else OrderSide.BUY
+
+            new_sl = StopOrderRequest(
+                symbol=symbol,
+                qty=abs(pos_qty),
+                side=protect_side,
+                time_in_force=TimeInForce.GTC,
+                stop_price=str(round(new_stop_price, 2)),
+            )
+            resp = self._trading.submit_order(new_sl)
+            log.info("alpaca_stop_updated", symbol=symbol, new_sl=new_stop_price, order_id=str(resp.id))
+            return {"status": "ok", "trade_id": symbol, "new_stop": new_stop_price, "order_id": str(resp.id)}
+        except Exception as e:
+            log.error("alpaca_stop_update_failed", symbol=symbol, error=str(e))
+            return {"status": "error", "reason": str(e)}
