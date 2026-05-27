@@ -76,7 +76,7 @@ export default function App() {
   const [riskOpen, setRiskOpen] = useState(false);
   const [lastReply, setLastReply] = useState("");
   const [voiceEnabled] = useState(true);
-  const { status: riskStatus } = useRiskStatus(60000);
+  const { status: riskStatus, setMode: setRiskMode, loading: riskLoading } = useRiskStatus(60000);
 
   const handleCommand = useCallback(async (text) => {
     setBusy(true);
@@ -241,7 +241,13 @@ export default function App() {
         lastReply={lastReply}
       />
 
-      <RiskOffSheet open={riskOpen} onClose={() => setRiskOpen(false)} />
+      <RiskOffSheet
+        open={riskOpen}
+        onClose={() => setRiskOpen(false)}
+        status={riskStatus}
+        setMode={setRiskMode}
+        loading={riskLoading}
+      />
     </div>
   );
 }

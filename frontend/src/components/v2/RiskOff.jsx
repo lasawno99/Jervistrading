@@ -41,7 +41,7 @@ const useRiskStatus = (refreshMs = 60000) => {
 
 /**
  * Slim banner shown on Dashboard when Risk-Off is active.
- * Auto-hides when standby.
+ * Auto-hides when standby. Receives status from parent (single source of truth).
  */
 export const RiskOffBanner = ({ status, onOpenControls }) => {
   return (
@@ -79,14 +79,9 @@ export const RiskOffBanner = ({ status, onOpenControls }) => {
 
 /**
  * Sheet modal: shows live risk status + 3 mode buttons (Auto / Force On / Force Off).
+ * Accepts status + setMode from parent so banner stays in sync.
  */
-export const RiskOffSheet = ({ open, onClose }) => {
-  const { status, setMode, loading } = useRiskStatus(open ? 15000 : 60000);
-
-  if (!status && open) {
-    // First render before status loads — keep the modal frame so toggle isn't laggy.
-  }
-
+export const RiskOffSheet = ({ open, onClose, status, setMode, loading }) => {
   const isManualOn = status?.manual_override === "on";
   const isManualOff = status?.manual_override === "off";
   const isAuto = !status?.manual_override;

@@ -96,6 +96,44 @@ Railway auto-restarts on Variable save → new instruments take effect on the ne
 - 44/44 pytest passing on both workers (no regressions from the rate-limit refactor)
 - Defaults preserved: existing deployments with no `MAX_ORDERS_PER_MINUTE` set keep the old `5` behavior
 
+## Auto-Risk-Off Mode + Downside Protection (2026-05-27, **NEW**)
+
+User reported a red day driven by BTC -3% pullback and asked for downside protection. Built a CMC-driven Risk-Off gate that pauses **new entries** (existing positions and their stops untouched) when conditions get ugly.
+
+### Backend (`/app/backend/risk_gate.py` + `server.py` lines ~770)
+- `GET /api/risk/status` — `{active, source, reason, regime, fg_value, mc_pct_24h, manual_override, since, as_of}`. Auto-evaluates via CMC every poll (uses the shared 75s cmc_client cache so quota-safe).
+- `POST /api/risk/override` — `{mode: 'on'|'off'|'auto', by?}`. 400 on invalid mode. Persists in MongoDB `risk_state._id="main"`.
+- **Auto logic**: `regime=bear` AND `fg_value ≤ 30` → active. `fg_value ≤ 20` → active regardless of regime (extreme fear).
+- **Manual override** beats auto; `mode='auto'` clears the override.
+
+### Frontend (`/app/frontend/src/components/v2/RiskOff.jsx`)
+- **RiskOffBanner**: red banner on Dashboard tab when active, shows reason + "tap to manage".
+- **RiskOffSheet**: bottom-sheet modal (App-Store-style) with live regime/F&G/24h-Mkt readout + 3 mode pills (🤖 Auto / 🛡 Force On / 🟢 Force Off).
+- **MarketPulseStrip**: regime pill now clickable, opens the same sheet.
+- **Single source of truth**: `useRiskStatus` hook lifted to App.js; passed as props to both Banner and Sheet so toggles inside the sheet update the banner instantly (no 60s lag).
+
+### Worker integration (`/app/jarvis-synth*/app/risk_gate.py` + `main.py`)
+- New module: async `check()` polls `DASHBOARD_RISK_STATUS_URL` (env var, optional). **Fails OPEN** if unset/unreachable.
+- Wired into `main.py` as **Layer 4a** — runs BEFORE the existing `run_pre_tauric_filters` (Layer 4b). When gate vetoes, LONG/SHORT downgrades to HOLD with reasoning `"Risk-Off: ..."` and a record appended to `filter_records` so the Bot Brain panel shows the reason.
+- `.env.example` documented for both workers.
+
+### Yes — JARVIS can make money in DOWN markets
+- **OANDA forex** (`jarvis-synth`): full SHORT support. When Tauric votes SELL + regime=BEAR, opens short positions that profit on price drops.
+- **Alpaca stocks** (`jarvis-synth-alpaca`): full SHORT support on individual stocks (NVDA/TSLA/AAPL/AMD/META).
+- **Alpaca crypto**: long-only by US regulation. Risk-Off becomes the primary defensive tool for crypto exposure.
+
+### Verified
+- Testing agent: backend 100% (all endpoints + invalid input + auto thresholds), worker pytests 100% (44/44 + 44/44), frontend banner/sheet/regime-pill flow all green.
+- Fix shipped post-testing: banner-sheet state sync (was 60s lag, now instant) via lifted hook.
+- Live signals at deploy: regime=BEAR, F&G=36 → active=false (correct — 36 above 30 threshold).
+
+### User actions to enable on Railway (optional)
+On each worker service Variables tab, add:
+```
+DASHBOARD_RISK_STATUS_URL=https://your-dashboard.preview.emergentagent.com/api/risk/status
+```
+Workers restart, and from then on every cycle does a 4s HTTP check before opening a new entry. No other changes needed.
+
 # PRD — JARVIS Trading System (monorepo)
 
 ## Services in this repo
