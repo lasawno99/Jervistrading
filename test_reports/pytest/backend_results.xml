@@ -1,51 +1,22 @@
-<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" errors="0" failures="3" skipped="0" tests="33" time="58.400" timestamp="2026-05-27T21:26:52.166067+00:00" hostname="agent-env-a1c63395-f638-4dc3-ae96-23c9e3decfb8"><testcase classname="backend.tests.test_jarvis_backend.TestServiceInfo" name="test_root_service_info" time="0.205"><failure message="assert True is False">backend/tests/test_jarvis_backend.py:51: in test_root_service_info
-    assert d["kimi_active"] is False
-E   assert True is False</failure></testcase><testcase classname="backend.tests.test_jarvis_backend.TestChatAndTasks" name="test_chat_trading_intent_creates_task" time="16.093" /><testcase classname="backend.tests.test_jarvis_backend.TestChatAndTasks" name="test_tasks_listing_after_chat" time="0.051" /><testcase classname="backend.tests.test_jarvis_backend.TestFeeds" name="test_trading_feed_six_tickers" time="0.048" /><testcase classname="backend.tests.test_jarvis_backend.TestFeeds" name="test_trading_feed_random_walk" time="0.295" /><testcase classname="backend.tests.test_jarvis_backend.TestFeeds" name="test_twitter_feed" time="0.048" /><testcase classname="backend.tests.test_jarvis_backend.TestFeeds" name="test_calendar_feed" time="0.048" /><testcase classname="backend.tests.test_jarvis_backend.TestFeeds" name="test_news_feed" time="0.050" /><testcase classname="backend.tests.test_jarvis_backend.TestBotStatus" name="test_bot_status" time="0.048"><failure message="assert True is False">backend/tests/test_jarvis_backend.py:135: in test_bot_status
-    assert d["kimi_active"] is False
-E   assert True is False</failure></testcase><testcase classname="backend.tests.test_jarvis_backend.TestBotStatus" name="test_bot_positions_initial" time="0.050" /><testcase classname="backend.tests.test_jarvis_backend.TestTrade" name="test_buy_btc_then_position_reflects" time="0.099" /><testcase classname="backend.tests.test_jarvis_backend.TestTrade" name="test_trade_invalid_symbol_returns_400" time="0.051" /><testcase classname="backend.tests.test_jarvis_backend.TestTrade" name="test_trade_insufficient_cash_returns_400" time="0.049" /><testcase classname="backend.tests.test_jarvis_backend.TestSignals" name="test_generate_signal_eventually" time="20.020"><failure message="requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='jarvis-agent-16.preview.emergentagent.com', port=443): Read timed out. (read timeout=20)">/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:534: in _make_request
-    response = conn.getresponse()
-/root/.venv/lib/python3.11/site-packages/urllib3/connection.py:571: in getresponse
-    httplib_response = super().getresponse()
-/usr/local/lib/python3.11/http/client.py:1415: in getresponse
-    response.begin()
-/usr/local/lib/python3.11/http/client.py:330: in begin
-    version, status, reason = self._read_status()
-/usr/local/lib/python3.11/http/client.py:291: in _read_status
-    line = str(self.fp.readline(_MAXLINE + 1), "iso-8859-1")
-/usr/local/lib/python3.11/socket.py:718: in readinto
-    return self._sock.recv_into(b)
-/usr/local/lib/python3.11/ssl.py:1314: in recv_into
-    return self.read(nbytes, buffer)
-/usr/local/lib/python3.11/ssl.py:1166: in read
-    return self._sslobj.read(len, buffer)
-E   TimeoutError: The read operation timed out
+<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="19" time="64.025" timestamp="2026-05-28T06:21:21.576680+00:00" hostname="agent-env-a1c63395-f638-4dc3-ae96-23c9e3decfb8"><testcase classname="backend.tests.test_jarvis_backend.TestServiceInfo" name="test_root_service_info" time="0.204"><failure message="assert True is False">self = &lt;test_jarvis_backend.TestServiceInfo object at 0xf83987869450&gt;
+client = &lt;requests.sessions.Session object at 0xf83987842e50&gt;
 
-The above exception was the direct cause of the following exception:
-/root/.venv/lib/python3.11/site-packages/requests/adapters.py:645: in send
-    resp = conn.urlopen(
-/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:841: in urlopen
-    retries = retries.increment(
-/root/.venv/lib/python3.11/site-packages/urllib3/util/retry.py:490: in increment
-    raise reraise(type(error), error, _stacktrace)
-/root/.venv/lib/python3.11/site-packages/urllib3/util/util.py:39: in reraise
-    raise value
-/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:787: in urlopen
-    response = self._make_request(
-/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:536: in _make_request
-    self._raise_timeout(err=e, url=url, timeout_value=read_timeout)
-/root/.venv/lib/python3.11/site-packages/urllib3/connectionpool.py:367: in _raise_timeout
-    raise ReadTimeoutError(
-E   urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='jarvis-agent-16.preview.emergentagent.com', port=443): Read timed out. (read timeout=20)
+    def test_root_service_info(self, client):
+        r = client.get(f"{API}/", timeout=15)
+        assert r.status_code == 200
+        d = r.json()
+        assert d["service"] == "jarvis"
+&gt;       assert d["kimi_active"] is False
+E       assert True is False
 
-During handling of the above exception, another exception occurred:
-backend/tests/test_jarvis_backend.py:197: in test_generate_signal_eventually
-    r = client.post(f"{API}/bot/signal", timeout=20)
-/root/.venv/lib/python3.11/site-packages/requests/sessions.py:640: in post
-    return self.request("POST", url, data=data, json=json, **kwargs)
-/root/.venv/lib/python3.11/site-packages/requests/sessions.py:592: in request
-    resp = self.send(prep, **send_kwargs)
-/root/.venv/lib/python3.11/site-packages/requests/sessions.py:706: in send
-    r = adapter.send(request, **kwargs)
-/root/.venv/lib/python3.11/site-packages/requests/adapters.py:691: in send
-    raise ReadTimeout(e, request=request)
-E   requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='jarvis-agent-16.preview.emergentagent.com', port=443): Read timed out. (read timeout=20)</failure></testcase><testcase classname="backend.tests.test_jarvis_backend.TestSignals" name="test_signals_listing" time="0.171" /><testcase classname="backend.tests.test_jarvis_backend.TestSignals" name="test_approve_signal_executes" time="11.684" /><testcase classname="backend.tests.test_jarvis_backend.TestSignals" name="test_skip_signal" time="5.088" /><testcase classname="backend.tests.test_jarvis_backend.TestAutoAndReset" name="test_auto_mode_toggle" time="0.101" /><testcase classname="backend.tests.test_jarvis_backend.TestAutoAndReset" name="test_reset_clears_state" time="0.206" /><testcase classname="backend.tests.test_market_routes.TestMarketStatus" name="test_status_shape" time="0.184" /><testcase classname="backend.tests.test_market_routes.TestFearGreed" name="test_fear_greed_shape" time="0.058" /><testcase classname="backend.tests.test_market_routes.TestRegime" name="test_regime_shape" time="0.070" /><testcase classname="backend.tests.test_market_routes.TestTopMovers" name="test_top_movers_shape" time="0.259" /><testcase classname="backend.tests.test_market_routes.TestCaching" name="test_repeated_calls_dont_bump_counter" time="1.173" /><testcase classname="backend.tests.test_market_routes.TestKeyLeakage" name="test_no_key_in_market_endpoints" time="0.352" /><testcase classname="backend.tests.test_risk_gate" name="test_status_returns_full_shape" time="0.120" /><testcase classname="backend.tests.test_risk_gate" name="test_status_no_override_is_auto" time="0.257" /><testcase classname="backend.tests.test_risk_gate" name="test_override_on_sets_active_true" time="0.252" /><testcase classname="backend.tests.test_risk_gate" name="test_override_off_sets_active_false" time="0.114" /><testcase classname="backend.tests.test_risk_gate" name="test_override_auto_clears" time="0.395" /><testcase classname="backend.tests.test_risk_gate" name="test_override_invalid_400" time="0.106" /><testcase classname="backend.tests.test_risk_gate" name="test_status_cached_fast" time="0.283" /><testcase classname="backend.tests.test_risk_gate" name="test_auto_logic_thresholds" time="0.136" /></testsuite></testsuites>
+backend/tests/test_jarvis_backend.py:51: AssertionError</failure></testcase><testcase classname="backend.tests.test_jarvis_backend.TestChatAndTasks" name="test_chat_trading_intent_creates_task" time="7.180" /><testcase classname="backend.tests.test_jarvis_backend.TestChatAndTasks" name="test_tasks_listing_after_chat" time="0.045" /><testcase classname="backend.tests.test_jarvis_backend.TestFeeds" name="test_trading_feed_six_tickers" time="0.043" /><testcase classname="backend.tests.test_jarvis_backend.TestFeeds" name="test_trading_feed_random_walk" time="0.285" /><testcase classname="backend.tests.test_jarvis_backend.TestFeeds" name="test_twitter_feed" time="0.080" /><testcase classname="backend.tests.test_jarvis_backend.TestFeeds" name="test_calendar_feed" time="0.081" /><testcase classname="backend.tests.test_jarvis_backend.TestFeeds" name="test_news_feed" time="0.045" /><testcase classname="backend.tests.test_jarvis_backend.TestBotStatus" name="test_bot_status" time="0.042"><failure message="assert True is False">self = &lt;test_jarvis_backend.TestBotStatus object at 0xf839878517d0&gt;
+client = &lt;requests.sessions.Session object at 0xf83987842e50&gt;
+
+    def test_bot_status(self, client):
+        r = client.get(f"{API}/bot/status", timeout=15)
+        assert r.status_code == 200
+        d = r.json()
+&gt;       assert d["kimi_active"] is False
+E       assert True is False
+
+backend/tests/test_jarvis_backend.py:135: AssertionError</failure></testcase><testcase classname="backend.tests.test_jarvis_backend.TestBotStatus" name="test_bot_positions_initial" time="0.042" /><testcase classname="backend.tests.test_jarvis_backend.TestTrade" name="test_buy_btc_then_position_reflects" time="0.088" /><testcase classname="backend.tests.test_jarvis_backend.TestTrade" name="test_trade_invalid_symbol_returns_400" time="0.081" /><testcase classname="backend.tests.test_jarvis_backend.TestTrade" name="test_trade_insufficient_cash_returns_400" time="0.043" /><testcase classname="backend.tests.test_jarvis_backend.TestSignals" name="test_generate_signal_eventually" time="27.141" /><testcase classname="backend.tests.test_jarvis_backend.TestSignals" name="test_signals_listing" time="0.045" /><testcase classname="backend.tests.test_jarvis_backend.TestSignals" name="test_approve_signal_executes" time="5.535" /><testcase classname="backend.tests.test_jarvis_backend.TestSignals" name="test_skip_signal" time="22.619" /><testcase classname="backend.tests.test_jarvis_backend.TestAutoAndReset" name="test_auto_mode_toggle" time="0.082" /><testcase classname="backend.tests.test_jarvis_backend.TestAutoAndReset" name="test_reset_clears_state" time="0.261" /></testsuite></testsuites>

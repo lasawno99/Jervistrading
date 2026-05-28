@@ -31,6 +31,7 @@ from app.news_scout import NewsScout
 from app.profit_lock import ProfitLock, format_lock_alert
 from app.risk_gate import check as risk_gate_check
 from app.indicators import adaptive_sl_pct
+from app.position_sizer import size as size_position
 from app.signal import build_signal
 from app.status_server import build_app as build_status_app, start_in_thread as start_status_server
 from app.synth import synthesize
@@ -203,11 +204,24 @@ async def run_pipeline(
         # ATR-adaptive: each symbol gets a SL sized to its own volatility.
         rr = 3.0 if verdict.confidence >= 9 else (2.5 if verdict.confidence >= 7 else 2.0)
         sl_pct = adaptive_sl_pct(hist, multiplier=1.5) or 1.0
+        # Conviction × volatility position sizing (Gaps #3 + #4).
+        sized = size_position(decision.units, verdict.confidence, kronos_sig.vol_amp)
+        if sized.final_units <= 0:
+            log.info("position_sizer_vetoed", instrument=instrument, reason=sized.reason)
+            continue
+        log.info(
+            "position_sized",
+            instrument=instrument,
+            base=sized.base_units,
+            final=sized.final_units,
+            conviction_mult=sized.conviction_mult,
+            vol_mult=sized.vol_mult,
+        )
         result = await asyncio.to_thread(
             executor.execute,
             instrument=instrument,
             side=side,
-            units=decision.units,
+            units=sized.final_units,
             rationale=decision.reasoning[:200],
             rr_ratio=rr,
             sl_pips=sl_pct,

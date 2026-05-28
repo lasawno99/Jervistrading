@@ -1,0 +1,43 @@
+{
+  "summary": "Risk Engine 4/4 — verified Gaps #3 (conviction-scaled sizing) + #4 (volatility-adjusted sizing). Both workers pass 83/83 pytest (was 64, +19 from test_position_sizer.py). main.py wiring confirmed in both jarvis-synth + jarvis-synth-alpaca — sizer called BEFORE executor.execute with veto path that logs 'position_sizer_vetoed' and skips order placement. /api/risk/posture returns all 4 improvement_gaps with status='shipped'. Frontend Agents tab Risk Posture card header reads 'RISK ENGINE UPGRADES (4/4 SHIPPED)' with all 4 gaps showing green-check + green SHIPPED badge — no amber MEDIUM/HIGH IMPACT badges remain. No regression on /api/risk/status, /api/market/*, /api/dashboard/hero, /api/dashboard/win-rate-trend (all 200).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/bot/status (backend tests)", "issue": "2 pre-existing failures in /app/backend/tests/test_jarvis_backend.py (test_root_service_info, test_bot_status — kimi_active state assertion). Unrelated to position_sizer PR; same failures observed in iteration_5."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/jarvis-synth/tests/test_position_sizer.py",
+    "/app/jarvis-synth-alpaca/tests/test_position_sizer.py",
+    "/app/test_reports/pytest/jarvis_synth_results.xml",
+    "/app/test_reports/pytest/jarvis_synth_alpaca_results.xml",
+    "/app/test_reports/pytest/backend_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "position_sizer.py is clean — pure function, frozen dataclass SizingResult, defensive clamps for conf<7 (→1.0) and conf>10 (→2.0). No I/O, easily testable.",
+    "main.py wiring identical between both workers (jarvis-synth + jarvis-synth-alpaca) — good. Both emit structured 'position_sized' / 'position_sizer_vetoed' logs as advertised, traceable via Bot Brain panel.",
+    "Pre-existing test_jarvis_backend.py failures (test_root_service_info, test_bot_status) should be investigated separately — not blocking this PR but technical debt."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (position_sizer + workers); 89% (test_jarvis_backend.py — 17/19 pre-existing)", "frontend": "100%"},
+  "test_credentials": "n/a — no auth flows in scope",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Risk Engine campaign closed at 4/4. position_sizer is pure and well-tested. Main agent did not modify backend/.env or .env keys. Pre-existing test_jarvis_backend.py state-assertion failures (kimi_active, service info) remain and should be addressed as separate cleanup. Risk override was not touched during this run (no need to reset to 'auto').",
+  "verification_details": {
+    "pytest_jarvis_synth": "83 passed in 0.54s",
+    "pytest_jarvis_synth_alpaca": "83 passed in 0.58s",
+    "api_risk_posture": "4/4 improvement_gaps status='shipped' (risk_off_gate, conviction_scaling, atr_stops, vol_adjusted_sizing, trailing_stops — all shipped)",
+    "main_py_wiring_synth": "L32 import size as size_position; L210 sized=size_position(decision.units, verdict.confidence, kronos_sig.vol_amp); L211 veto if final_units<=0; L230 executor.execute(units=sized.final_units)",
+    "main_py_wiring_alpaca": "L34 import; L208 sized=size_position(...); L209-210 veto+log; L224 executor passes sized.final_units",
+    "frontend_agents_tab": "Header 'RISK ENGINE UPGRADES (4/4 SHIPPED)'; 4 gaps each with green check + green SHIPPED badge; zero MEDIUM/HIGH IMPACT amber badges",
+    "regression_endpoints": "/api/risk/status, /api/market/regime, /api/market/fear-greed, /api/dashboard/hero, /api/dashboard/win-rate-trend all return 200"
+  }
+}

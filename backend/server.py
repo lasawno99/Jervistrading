@@ -955,10 +955,10 @@ async def risk_posture():
             {
                 "id": "conviction_scaling",
                 "label": "Conviction-scaled sizing",
-                "status": "missing",
+                "status": "shipped",
                 "impact": "medium",
-                "current": "Fixed: HALF=50u or FULL=100u of base.",
-                "proposed": "Scale by Tauric confidence: 7→1.0x, 8→1.3x, 9→1.6x, 10→2.0x.",
+                "current": "Live: base × Tauric multiplier (7→1.0x, 8→1.3x, 9→1.6x, 10→2.0x).",
+                "proposed": "High-conviction trades carry more capital, weak setups stay small.",
             },
             {
                 "id": "atr_stops",
@@ -971,10 +971,10 @@ async def risk_posture():
             {
                 "id": "vol_adjusted_sizing",
                 "label": "Volatility-adjusted sizing",
-                "status": "missing",
+                "status": "shipped",
                 "impact": "medium",
-                "current": "Kronos vol_amp only blocks (>2.0x); doesn't shrink size between 1.3-2.0x.",
-                "proposed": "When 1.3<vol_amp<2.0, multiply units by 0.5. Lower drawdown during chop.",
+                "current": "Live: vol_amp ≤1.3x = full size, 1.3-2.0x = half size, ≥2.0x = blocked.",
+                "proposed": "Smaller positions during expanding-vol regimes lower drawdown.",
             },
             {
                 "id": "trailing_stops",
