@@ -928,9 +928,17 @@ async def risk_posture():
                 "budget_used_pct": round(budget_used_pct, 2),
             },
             "confidence_floor": {
-                "tauric_min": 7,
+                "tauric_min": 8,
                 "kronos_min": "medium",
-                "policy": "Trades only fire when Tauric ≥7/10 AND Kronos confidence ≥ medium.",
+                "kronos_upside_high": 0.70,
+                "kronos_upside_low": 0.30,
+                "policy": "Trades only fire when Tauric ≥8/10 AND Kronos confidence ≥ medium AND upside_prob ≥0.70 (longs) or ≤0.30 (shorts).",
+            },
+            "mtf_confluence": {
+                "enabled": True,
+                "timeframes": ["H4", "H1"],
+                "min_agree": 2,
+                "policy": "EMA-20 slope on both H4 and H1 must agree with the proposed trade direction.",
             },
             "min_rr_ratio": {
                 "low": 2.0, "mid": 2.5, "high": 3.0,

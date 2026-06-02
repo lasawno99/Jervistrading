@@ -156,10 +156,18 @@ export const RiskPostureCard = ({ delay = 0.1 }) => {
           />
           <ProtectionRow
             label="Confidence Floor"
-            sub="Tauric ≥7/10 + Kronos ≥medium"
+            sub="Tauric ≥8/10 + Kronos ≥medium + upside ≥0.70 / ≤0.30"
             value="STRICT"
             severity="ok"
           />
+          {prot.mtf_confluence?.enabled && (
+            <ProtectionRow
+              label="Multi-Timeframe Confluence"
+              sub={`${prot.mtf_confluence.timeframes?.join(' + ')} EMA-20 slopes must agree`}
+              value="ACTIVE"
+              severity="ok"
+            />
+          )}
           <ProtectionRow
             label="Min Risk:Reward"
             sub="Take-profit always ≥2× stop-loss"

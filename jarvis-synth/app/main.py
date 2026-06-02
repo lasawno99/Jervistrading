@@ -91,11 +91,23 @@ async def run_pipeline(
 
         kronos_sig = build_signal(
             instrument, hist, pred,
-            upside_high=0.65, upside_low=0.35, max_vol_amp=2.0,
+            # Booster A: stricter Kronos thresholds (was 0.65/0.35).
+            upside_high=0.70, upside_low=0.30, max_vol_amp=2.0,
         )
         log.info("layer3_kronos_signal", instrument=instrument,
                  direction=kronos_sig.direction, confidence=kronos_sig.confidence,
                  upside_prob=round(kronos_sig.upside_prob, 3))
+
+        # Booster B: Multi-timeframe trend confluence — fetch H4 alongside H1
+        # so filters.mtf_trend_filter can require trend agreement across both.
+        mtf_bars = None
+        try:
+            h4 = await asyncio.to_thread(
+                fetcher.fetch_candles, instrument, "H4", 32
+            )
+            mtf_bars = {"H4": h4, "H1": hist}
+        except Exception as e:
+            log.warning("mtf_fetch_failed", instrument=instrument, error=str(e))
 
         # Layer 2: Tauric debate (7 agents)
         verdict = await debate.run(
@@ -149,7 +161,7 @@ async def run_pipeline(
                     instrument=instrument,
                     proposed_direction=decision.action,
                     primary_bars=hist,
-                    mtf_bars=None,
+                    mtf_bars=mtf_bars,
                     asset_kind="forex",
                 )
                 if not allowed:

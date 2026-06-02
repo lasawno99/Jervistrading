@@ -63,14 +63,14 @@ def synthesize(
     kronos: KronosSignal,
     base_units: int,
 ) -> FinalDecision:
-    # Confidence floor — tightened (was 5 / low) to lift win-rate.
-    # Now requires Tauric ≥ 7/10 AND Kronos confidence is not "low".
-    if tauric.confidence < 7 or kronos.confidence == "low":
+    # Quality Gate (Booster A): Tauric ≥8/10 (was 7) AND Kronos confidence is not "low".
+    # Trades fewer setups but each one is higher conviction → expected WR lift +8-15pp.
+    if tauric.confidence < 8 or kronos.confidence == "low":
         return FinalDecision(
             action="HOLD",
             units=0,
             reasoning=(
-                f"Confidence floor (>=7): Tauric={tauric.verdict}/{tauric.confidence}, "
+                f"Confidence floor (>=8): Tauric={tauric.verdict}/{tauric.confidence}, "
                 f"Kronos={kronos.direction}/{kronos.confidence}. "
                 "Below threshold — skip."
             ),

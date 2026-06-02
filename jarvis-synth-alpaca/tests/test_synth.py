@@ -70,5 +70,5 @@ def test_hold_verdict_always_hold():
 
 
 def test_underweight_plus_sell_is_half_short():
-    d = synthesize("EUR_USD", _tauric("UNDERWEIGHT", 7), _kronos("sell", "medium"), base_units=100)
+    d = synthesize("EUR_USD", _tauric("UNDERWEIGHT", 8), _kronos("sell", "medium"), base_units=100)
     assert d.action == "SHORT" and d.units == 50
