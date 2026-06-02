@@ -238,6 +238,34 @@ User asked: "Find existing data we can pull so we run on data sets parallel with
 ### Dependencies
 - New: `yfinance==1.4.1` (free, no API key).
 
+## Auto-Tune + Per-Trade Drill-Down (2026-06-02, **NEW**)
+
+User said "you pick" — shipped per-asset parameter optimization + trade-ledger drill-down on the Backtest Lab. This closes the loop from "we have backtests" to "we have actionable optimal configs per symbol".
+
+### Backend
+- `backtest_engine.py`:
+  - `kronos_surrogate()` now accepts `upside_high`, `upside_low`, `max_vol_amp` overrides.
+  - `synthesize()` accepts `tauric_floor` override.
+  - `run_backtest()` accepts 5 tunable params: `tauric_floor`, `upside_high`, `upside_low`, `atr_mult`, `rr_base`. Stored on `BacktestResult.params`.
+  - NEW `run_tune()` — `asyncio.gather` over 54 (tauric_floor × upside_high × atr_mult × rr_base) combos, ranked by `expectancy × √trades − dd_penalty`. Zero-trade outcomes score 0.
+- `backtest_routes.py` — `POST /api/backtest/tune`, `GET /api/backtest/tunes/active`, `GET /api/backtest/tunes/:id`. Stored in MongoDB `backtest_tunes`.
+
+### Frontend (`BacktestLab.jsx`)
+- New **Auto-Tune** button (amber) next to Run Backtest.
+- New **TuneSheet** modal — auto-fires tune on open, shows running indicator → "Best Config Found" card with WR/PL/Expectancy/DD + the winning Tauric/Upside/ATR/RR values + Top-10 ranked table.
+- New **RunDrilldownModal** — click any backtest row to see the full trade ledger (entry/exit times, side, prices, exit reason, P/L per trade) with the params used.
+- Testid `backtest-run-{id}` → `backtest-row-{id}` to avoid CSS selector collision with `backtest-run-button`.
+- Polling switched from in-memory `/tunes/active` to persisted `/tunes/:id` with proper cancellation via `useRef`; 404s treated as "still running" not error.
+
+### Initial optimization (live data)
+- ETH/USD 180d 1h → best config: **Tauric≥7 · Upside≥0.75 · ATR×1.5 · R:R 2.5** → **55.6% WR, +23.77% PL, +2.52% expectancy**. That's a +15pp WR improvement and +15pp PL improvement over the global config (8.17%).
+- Each tune runs ~15-45s end-to-end.
+
+### Verified
+- Backend pytest: 10/10 (`/app/backend/tests/test_backtest_routes.py`).
+- Frontend manual end-to-end: tune button → sheet opens → 30s later "Best Config Found" displays. Drill-down click → modal opens with full ETH/BTC trade ledger.
+- No regression on existing endpoints.
+
 # PRD — JARVIS Trading System (monorepo)
 
 ## Services in this repo

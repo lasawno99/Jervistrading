@@ -137,39 +137,60 @@ const TuneSheet = ({ open, symbol, period, onClose }) => {
   const [status, setStatus] = useState("idle");
   const [result, setResult] = useState(null);
 
+  const cancelRef = React.useRef({ cancelled: false });
+
   const runTune = async () => {
+    cancelRef.current = { cancelled: false };
     setStatus("queued"); setResult(null);
+    let id;
     try {
       const r = await axios.post(`${API}/backtest/tune`, { symbol, period, interval: "1h", base_units: 1000 }, { timeout: 15000 });
-      const id = r.data.tune_id;
+      id = r.data.tune_id;
+      if (!id) throw new Error("Backend returned no tune_id");
       setTuneId(id);
       setStatus("running");
-      // poll
-      for (let i = 0; i < 60; i++) {
-        await new Promise((res) => setTimeout(res, 3000));
-        const a = await axios.get(`${API}/backtest/tunes/active`, { timeout: 5000 });
-        const s = a.data.runs?.[id]?.status;
-        if (s === "done") {
-          const detail = await axios.get(`${API}/backtest/tunes/${id}`, { timeout: 10000 });
+    } catch (e) {
+      if (!cancelRef.current.cancelled) {
+        setStatus("error");
+        toast.error("Tune failed to start", { description: String(e?.response?.data?.detail || e?.message || e) });
+      }
+      return;
+    }
+
+    // Poll the PERSISTED endpoint — once the doc lands in MongoDB we know we're done.
+    // 60 attempts × 3s = 180s max wait. Symbol/period heavy combos may still need more.
+    for (let i = 0; i < 60; i++) {
+      if (cancelRef.current.cancelled) return;
+      await new Promise((res) => setTimeout(res, 3000));
+      if (cancelRef.current.cancelled) return;
+      try {
+        const detail = await axios.get(`${API}/backtest/tunes/${id}`, { timeout: 10000 });
+        // Result is persisted only after run completes
+        if (detail.data?.best) {
           setResult(detail.data);
           setStatus("done");
-          break;
+          return;
         }
-        if (s === "error") {
-          setStatus("error");
-          toast.error("Tune failed", { description: a.data.runs[id]?.error });
-          break;
+      } catch (e) {
+        if (e?.response?.status === 404) {
+          // Not yet persisted — keep waiting
+          continue;
         }
+        // Transient network blip — keep trying unless we've burned our budget
       }
-    } catch (e) {
+    }
+    if (!cancelRef.current.cancelled) {
       setStatus("error");
-      toast.error("Tune error", { description: String(e?.message || e) });
+      toast.error("Tune timed out", { description: "Took longer than 3 minutes. Try a shorter period." });
     }
   };
 
   useEffect(() => {
     if (open && status === "idle") runTune();
-    if (!open) { setStatus("idle"); setResult(null); setTuneId(null); }
+    if (!open) {
+      cancelRef.current.cancelled = true;
+      setStatus("idle"); setResult(null); setTuneId(null);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
