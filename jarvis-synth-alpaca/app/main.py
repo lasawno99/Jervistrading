@@ -31,6 +31,7 @@ from app.news_scout import NewsScout
 from app.profit_lock import ProfitLock, format_lock_alert
 from app.risk_gate import check as risk_gate_check
 from app.indicators import adaptive_sl_pct
+from app.instrument_config import for_symbol as get_instrument_override
 from app.position_sizer import size as size_position
 from app.signal import build_signal
 from app.status_server import build_app as build_status_app, start_in_thread as start_status_server
@@ -91,10 +92,24 @@ async def run_pipeline(
             log.error("layer3_predict_failed", instrument=instrument, error=str(e))
             continue
 
+        # Per-symbol override (set via dashboard Auto-Tune → "Apply to Live Workers").
+        override = await get_instrument_override(instrument)
+        upside_high = float(override["upside_high"]) if override else 0.70
+        upside_low = float(override["upside_low"]) if override else 0.30
+        tauric_floor = int(override["tauric_floor"]) if override else 8
+        atr_mult = float(override["atr_mult"]) if override else 1.5
+        rr_base = float(override["rr_base"]) if override else 2.0
+        if override:
+            log.info(
+                "instrument_override_active",
+                instrument=instrument,
+                upside_high=upside_high, upside_low=upside_low,
+                tauric_floor=tauric_floor, atr_mult=atr_mult, rr_base=rr_base,
+            )
+
         kronos_sig = build_signal(
             instrument, hist, pred,
-            # Booster A: stricter Kronos thresholds (was 0.65/0.35).
-            upside_high=0.70, upside_low=0.30, max_vol_amp=2.0,
+            upside_high=upside_high, upside_low=upside_low, max_vol_amp=2.0,
         )
         log.info("layer3_kronos_signal", instrument=instrument,
                  direction=kronos_sig.direction, confidence=kronos_sig.confidence,
@@ -133,7 +148,7 @@ async def run_pipeline(
                  risk_manager=verdict.risk_manager[:400])
 
         # Layer 4: synthesis
-        decision = synthesize(instrument, verdict, kronos_sig, cfg.base_position_units)
+        decision = synthesize(instrument, verdict, kronos_sig, cfg.base_position_units, tauric_floor=tauric_floor)
         log.info("layer4_decision", instrument=instrument,
                  action=decision.action, units=decision.units)
 
@@ -214,8 +229,12 @@ async def run_pipeline(
         # Tightened R:R — minimum 2.0 (was 1.5). For Alpaca the sl_pips field is
         # interpreted by the executor as a percent of price (1.0 = 1% SL distance).
         # ATR-adaptive: each symbol gets a SL sized to its own volatility.
-        rr = 3.0 if verdict.confidence >= 9 else (2.5 if verdict.confidence >= 7 else 2.0)
-        sl_pct = adaptive_sl_pct(hist, multiplier=1.5) or 1.0
+        rr = (
+            (rr_base + 1.0) if verdict.confidence >= 9
+            else (rr_base + 0.5) if verdict.confidence >= 8
+            else rr_base
+        )
+        sl_pct = adaptive_sl_pct(hist, multiplier=atr_mult) or 1.0
         # Conviction × volatility position sizing (Gaps #3 + #4).
         sized = size_position(decision.units, verdict.confidence, kronos_sig.vol_amp)
         if sized.final_units <= 0:

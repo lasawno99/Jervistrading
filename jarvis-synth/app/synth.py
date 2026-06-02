@@ -62,15 +62,17 @@ def synthesize(
     tauric: TauricVerdict,
     kronos: KronosSignal,
     base_units: int,
+    tauric_floor: int = 8,
 ) -> FinalDecision:
-    # Quality Gate (Booster A): Tauric ≥8/10 (was 7) AND Kronos confidence is not "low".
-    # Trades fewer setups but each one is higher conviction → expected WR lift +8-15pp.
-    if tauric.confidence < 8 or kronos.confidence == "low":
+    # Quality Gate (Booster A): Tauric ≥ tauric_floor (default 8/10) AND
+    # Kronos confidence not "low". Per-symbol overrides can lower/raise the
+    # floor based on backtest evidence (Auto-Tune feature on the dashboard).
+    if tauric.confidence < tauric_floor or kronos.confidence == "low":
         return FinalDecision(
             action="HOLD",
             units=0,
             reasoning=(
-                f"Confidence floor (>=8): Tauric={tauric.verdict}/{tauric.confidence}, "
+                f"Confidence floor (>={tauric_floor}): Tauric={tauric.verdict}/{tauric.confidence}, "
                 f"Kronos={kronos.direction}/{kronos.confidence}. "
                 "Below threshold — skip."
             ),

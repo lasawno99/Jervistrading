@@ -1638,6 +1638,12 @@ api_router_backtest = APIRouter(prefix="/api")
 api_router_backtest.include_router(br.build_router(db))
 app.include_router(api_router_backtest)
 
+# Per-symbol instrument configs (mounted under /api/instrument-configs/*)
+import instrument_config_routes as icr  # noqa: E402
+api_router_iconfigs = APIRouter(prefix="/api")
+api_router_iconfigs.include_router(icr.build_router(db))
+app.include_router(api_router_iconfigs)
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,

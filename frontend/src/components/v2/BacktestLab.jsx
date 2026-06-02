@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
-import { Play, Beaker, Loader2, TrendingUp, TrendingDown, Sliders, ChevronRight, X, Award } from "lucide-react";
+import { Play, Beaker, Loader2, TrendingUp, TrendingDown, Sliders, ChevronRight, X, Award, Send, Check } from "lucide-react";
 import { toast } from "sonner";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -136,6 +136,29 @@ const TuneSheet = ({ open, symbol, period, onClose }) => {
   const [tuneId, setTuneId] = useState(null);
   const [status, setStatus] = useState("idle");
   const [result, setResult] = useState(null);
+  const [applying, setApplying] = useState(false);
+  const [applied, setApplied] = useState(false);
+
+  const applyConfig = async () => {
+    if (!result?.best) return;
+    setApplying(true);
+    try {
+      await axios.post(`${API}/instrument-configs/apply`, {
+        symbol,
+        params: result.best.params,
+        source_tune_id: tuneId,
+        notes: `Auto-tuned ${period} window — WR=${result.best.win_rate}% PL=${result.best.total_pl_pct}%`,
+      }, { timeout: 10000 });
+      setApplied(true);
+      toast.success(`Applied to live workers · ${symbol}`, {
+        description: "Next worker cycle will use these params.",
+      });
+    } catch (e) {
+      toast.error("Apply failed", { description: String(e?.response?.data?.detail || e?.message || e) });
+    } finally {
+      setApplying(false);
+    }
+  };
 
   const cancelRef = React.useRef({ cancelled: false });
 
@@ -189,7 +212,7 @@ const TuneSheet = ({ open, symbol, period, onClose }) => {
     if (open && status === "idle") runTune();
     if (!open) {
       cancelRef.current.cancelled = true;
-      setStatus("idle"); setResult(null); setTuneId(null);
+      setStatus("idle"); setResult(null); setTuneId(null); setApplied(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -284,6 +307,25 @@ const TuneSheet = ({ open, symbol, period, onClose }) => {
                   <div className="mt-2 text-[10px] text-white/45">
                     {result.best.total_trades} trades over {result.combos_tested} configs tested in {result.elapsed_seconds}s.
                   </div>
+                  <button
+                    onClick={applyConfig}
+                    disabled={applying || applied}
+                    className="mt-3 w-full flex items-center justify-center gap-2 py-2 rounded-lg text-[12px] font-semibold transition disabled:opacity-70"
+                    style={{
+                      background: applied
+                        ? "rgba(34,197,94,0.20)"
+                        : "linear-gradient(135deg, var(--up), #16a34a)",
+                      color: "#fff",
+                      border: applied ? "1px solid rgba(34,197,94,0.45)" : "none",
+                      boxShadow: applied ? "none" : "0 6px 14px rgba(34,197,94,0.35)",
+                    }}
+                    data-testid="tune-apply-button"
+                  >
+                    {applying && <Loader2 size={13} className="animate-spin" />}
+                    {!applying && applied && <Check size={13} />}
+                    {!applying && !applied && <Send size={13} />}
+                    {applying ? "Applying…" : applied ? "Applied · workers will use next cycle" : "Apply to Live Workers"}
+                  </button>
                 </div>
 
                 <div className="text-[10px] tracking-[0.12em] uppercase text-white/40 mb-2">Top 10</div>
