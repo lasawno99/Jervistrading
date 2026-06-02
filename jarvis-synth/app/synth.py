@@ -13,7 +13,7 @@ Decision matrix (rough):
   SELL               | HOLD          | SHORT full    | SHORT half
 
 "Half" = base_position_units / 2 (rounded down).
-Confidence floor: if Tauric.confidence < 5 OR Kronos.confidence == "low", force HOLD.
+Confidence floor: if Tauric.confidence < 8 OR Kronos.confidence == "low", force HOLD.
 """
 from __future__ import annotations
 
