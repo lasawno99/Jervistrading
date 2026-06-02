@@ -1632,6 +1632,12 @@ api_router_market = APIRouter(prefix="/api")
 api_router_market.include_router(mr.router)
 app.include_router(api_router_market)
 
+# Backtest routes (mounted under /api/backtest/*)
+import backtest_routes as br  # noqa: E402
+api_router_backtest = APIRouter(prefix="/api")
+api_router_backtest.include_router(br.build_router(db))
+app.include_router(api_router_backtest)
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,

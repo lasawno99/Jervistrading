@@ -198,6 +198,46 @@ User explicitly asked for higher win rate. Shipped two well-known WR-boosters fr
 - Time to hit 20-trade threshold may slip from ~1 week → ~10 days.
 - This is the right tradeoff IF the lift in WR materializes; the WinRateTrendCard will tell us in real time.
 
+## Backtest Lab — Walk-Forward Pipeline Replay (2026-06-02, **NEW**)
+
+User asked: "Find existing data we can pull so we run on data sets parallel with execution, instead of waiting weeks for live trades." Shipped a walk-forward backtester that replays the JARVIS signal pipeline against years of historical OHLCV data — validates win rate in seconds, not days.
+
+### Backend (`/app/backend/`)
+- `backtest_engine.py` — pure numpy/pandas. Self-contained replica of:
+  - **Kronos surrogate**: deterministic EMA-momentum-based upside_prob (the live workers use the real Kronos NN — surrogate is cheap & free).
+  - **MTF trend agreement** (mirrors `filters.mtf_trend_filter`).
+  - **Indicator confluence** (RSI + EMA-20 vs price; mirrors `indicator_confluence`).
+  - **Synth matrix + Tauric floor ≥8** (mirrors `synth.synthesize`).
+  - **Position sizer** with conviction × volatility multipliers.
+  - **ATR-based stop + R:R take-profit + walking bar-by-bar exit**.
+- `backtest_routes.py` — `POST /api/backtest/run`, `GET /api/backtest/active`, `GET /api/backtest/runs`, `GET /api/backtest/runs/:id`.
+- Data via `yfinance` (free, no API key); symbol mapping handles `EUR_USD` → `EURUSD=X`, `BTC/USD` → `BTC-USD`, stocks pass-through.
+- **Smart mode** (`use_tauric=True`): 1 Claude call per signal that passes Kronos+filters, capped at `max_llm_calls` (default 50). The deterministic verdict serves as fallback.
+
+### Frontend
+- New **BacktestLab card** in Agents tab — pick symbol/period/interval/mode, hit RUN, poll active, display ranked results table with color-coded WR/PL/expectancy.
+
+### Initial validation results (live)
+| Symbol | Period | Bars | Trades | WR | Net P/L | Expectancy |
+|---|---|---|---|---|---|---|
+| ETH/USD | 180d 1h | 4295 | 19 | 36.8% | **+8.17%** | +0.483% |
+| BTC/USD | 180d 1h | 4295 | 8 | 25.0% | −2.04% | −0.213% |
+| NVDA | 180d 1h | 1243 | 17 | 17.6% | −18.01% | −1.143% |
+| EUR_USD | 60d 1h | 1396 | 0 | — | — | — |
+
+**Honest take:**
+- **ETH positive expectancy** even at 37% WR — proof the 2:1 R:R covers low win rate.
+- **EUR_USD = 0 trades** in 60 days — quality gate too strict for forex hourly; needs daily timeframe or relaxed thresholds. Use the lab to tune.
+- **NVDA struggles** — surrogate Kronos likely not capturing stock-specific behavior. Daily timeframe likely better than hourly.
+
+### Caveats surfaced in UI
+- Surrogate Kronos ≠ real Kronos NN — used in backtest only.
+- Smart mode uses a single-shot Claude call, not the full 7-agent debate.
+- Past performance ≠ future performance.
+
+### Dependencies
+- New: `yfinance==1.4.1` (free, no API key).
+
 # PRD — JARVIS Trading System (monorepo)
 
 ## Services in this repo
