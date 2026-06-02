@@ -88,7 +88,14 @@ def _rsi(closes: np.ndarray, period: int = 14) -> float:
 
 # ---------- Kronos surrogate ------------------------------------------------
 
-def kronos_surrogate(closes: np.ndarray, highs: np.ndarray, lows: np.ndarray) -> Dict[str, Any]:
+def kronos_surrogate(
+    closes: np.ndarray,
+    highs: np.ndarray,
+    lows: np.ndarray,
+    upside_high: float = 0.70,
+    upside_low: float = 0.30,
+    max_vol_amp: float = 2.0,
+) -> Dict[str, Any]:
     """Cheap, deterministic stand-in for the Kronos NN forecaster.
 
     Uses EMA-9 over EMA-20 momentum + recent slope to derive an upside_prob
@@ -114,15 +121,15 @@ def kronos_surrogate(closes: np.ndarray, highs: np.ndarray, lows: np.ndarray) ->
     older_std = float(np.std(np.diff(older) / older[:-1])) if len(older) > 5 else recent_std
     vol_amp = (recent_std / older_std) if older_std > 0 else 1.0
 
-    if vol_amp > 2.0:
+    if vol_amp > max_vol_amp:
         return {"direction": "skip", "confidence": "low", "upside_prob": upside_prob, "vol_amp": vol_amp}
 
-    if upside_prob >= 0.70:
+    if upside_prob >= upside_high:
         direction = "buy"
-        confidence = "high" if upside_prob >= 0.80 else "medium"
-    elif upside_prob <= 0.30:
+        confidence = "high" if upside_prob >= (upside_high + 0.10) else "medium"
+    elif upside_prob <= upside_low:
         direction = "sell"
-        confidence = "high" if upside_prob <= 0.20 else "medium"
+        confidence = "high" if upside_prob <= (upside_low - 0.10) else "medium"
     else:
         direction = "skip"
         confidence = "low"
@@ -167,9 +174,9 @@ _MATRIX = {
 }
 
 
-def synthesize(tauric_verdict: str, tauric_conf: int, kronos: Dict[str, Any], base_units: int) -> Dict[str, Any]:
-    if tauric_conf < 8 or kronos["confidence"] == "low":
-        return {"action": "HOLD", "units": 0, "reason": f"floor: T={tauric_conf} K={kronos['confidence']}"}
+def synthesize(tauric_verdict: str, tauric_conf: int, kronos: Dict[str, Any], base_units: int, tauric_floor: int = 8) -> Dict[str, Any]:
+    if tauric_conf < tauric_floor or kronos["confidence"] == "low":
+        return {"action": "HOLD", "units": 0, "reason": f"floor: T={tauric_conf}<{tauric_floor} K={kronos['confidence']}"}
     sizing = _MATRIX.get(tauric_verdict, {}).get(kronos["direction"], "none")
     if sizing == "none":
         return {"action": "HOLD", "units": 0, "reason": "matrix none"}
@@ -299,6 +306,7 @@ class BacktestResult:
     started_at: str = ""
     finished_at: str = ""
     error: Optional[str] = None
+    params: Dict[str, Any] = field(default_factory=dict)
 
 
 def _fetch_bars(yf_symbol: str, period: str, interval: str) -> pd.DataFrame:
@@ -323,8 +331,17 @@ async def run_backtest(
     base_units: int = 1000,
     use_tauric: bool = False,
     max_llm_calls: int = 50,
+    *,
+    tauric_floor: int = 8,
+    upside_high: float = 0.70,
+    upside_low: float = 0.30,
+    atr_mult: float = 1.5,
+    rr_base: float = 2.0,
 ) -> BacktestResult:
-    """Run a backtest. Returns a BacktestResult ready to persist."""
+    """Run a backtest. Returns a BacktestResult ready to persist.
+
+    The 5 starred params let auto-tune sweep different signal/risk configs.
+    """
     run_id = uuid.uuid4().hex[:12]
     started = datetime.now(timezone.utc)
     yf_symbol = map_symbol(symbol)
@@ -332,6 +349,13 @@ async def run_backtest(
     result = BacktestResult(
         run_id=run_id, symbol=symbol, yf_symbol=yf_symbol,
         bars=0, use_tauric=use_tauric, started_at=started.isoformat(),
+        params={
+            "tauric_floor": tauric_floor,
+            "upside_high": upside_high,
+            "upside_low": upside_low,
+            "atr_mult": atr_mult,
+            "rr_base": rr_base,
+        },
     )
 
     try:
@@ -411,7 +435,10 @@ async def run_backtest(
 
         # No open trade — look for new entry
         h = closes[:i + 1]
-        kronos = kronos_surrogate(h, highs[:i + 1], lows[:i + 1])
+        kronos = kronos_surrogate(
+            h, highs[:i + 1], lows[:i + 1],
+            upside_high=upside_high, upside_low=upside_low,
+        )
         if kronos["direction"] == "skip":
             continue
         mtf = _mtf_closes(i)
@@ -430,7 +457,7 @@ async def run_backtest(
         else:
             vote = tauric_deterministic(kronos)
 
-        decision = synthesize(vote["verdict"], vote["confidence"], kronos, base_units)
+        decision = synthesize(vote["verdict"], vote["confidence"], kronos, base_units, tauric_floor=tauric_floor)
         if decision["action"] == "HOLD":
             continue
 
@@ -441,8 +468,8 @@ async def run_backtest(
         # Entry at next bar open (i+1)
         entry = closes[i]
         atr = _atr(highs[max(0, i - 30):i + 1], lows[max(0, i - 30):i + 1], h[max(0, i - 30):i + 1])
-        sl_dist = max(atr * 1.5, entry * 0.003)  # at least 0.3% to avoid degenerate stops
-        rr = 3.0 if vote["confidence"] >= 9 else (2.5 if vote["confidence"] >= 8 else 2.0)
+        sl_dist = max(atr * atr_mult, entry * 0.003)  # at least 0.3% to avoid degenerate stops
+        rr = max(rr_base, (rr_base + 1.0) if vote["confidence"] >= 9 else (rr_base + 0.5) if vote["confidence"] >= 8 else rr_base)
         tp_dist = sl_dist * rr
 
         if decision["action"] == "LONG":
@@ -489,3 +516,95 @@ async def run_backtest(
     result.elapsed_seconds = (datetime.now(timezone.utc) - started).total_seconds()
     result.finished_at = datetime.now(timezone.utc).isoformat()
     return result
+
+
+# ---------- Auto-Parameter Tuning -------------------------------------------
+
+# Small but meaningful grid — keeps runtime under ~5 min on a 180d hourly window.
+_DEFAULT_GRID = {
+    "tauric_floor": [7, 8],
+    "upside_high": [0.65, 0.70, 0.75],
+    "atr_mult": [1.0, 1.5, 2.0],
+    "rr_base": [1.5, 2.0, 2.5],
+}
+
+
+def _score(result: BacktestResult) -> float:
+    """Combined score — rewards expectancy + trade volume + low drawdown.
+
+    Zero-trade outcomes score 0 (don't pretend "no trades" is good).
+    """
+    if result.total_trades < 3 or result.error:
+        return 0.0
+    # Expectancy is the core signal; multiply by sqrt(trades) for statistical confidence;
+    # subtract drawdown penalty so we don't pick a high-volatility ladder.
+    import math
+    sample_weight = math.sqrt(min(result.total_trades, 100))
+    dd_penalty = result.max_drawdown_pct * 0.05
+    return result.expectancy * sample_weight - dd_penalty
+
+
+async def run_tune(
+    symbol: str,
+    period: str = "180d",
+    interval: str = "1h",
+    base_units: int = 1000,
+) -> Dict[str, Any]:
+    """Run a small grid search over (tauric_floor, upside_high, atr_mult, rr_base).
+
+    upside_low mirrors upside_high (1 - high). use_tauric stays False to keep
+    LLM cost zero across the entire tune sweep.
+    """
+    started = datetime.now(timezone.utc)
+
+    combos = []
+    for tf in _DEFAULT_GRID["tauric_floor"]:
+        for uh in _DEFAULT_GRID["upside_high"]:
+            for am in _DEFAULT_GRID["atr_mult"]:
+                for rr in _DEFAULT_GRID["rr_base"]:
+                    combos.append({
+                        "tauric_floor": tf,
+                        "upside_high": uh,
+                        "upside_low": round(1.0 - uh, 2),
+                        "atr_mult": am,
+                        "rr_base": rr,
+                    })
+
+    async def _one(p):
+        r = await run_backtest(
+            symbol=symbol, period=period, interval=interval, base_units=base_units,
+            use_tauric=False, tauric_floor=p["tauric_floor"],
+            upside_high=p["upside_high"], upside_low=p["upside_low"],
+            atr_mult=p["atr_mult"], rr_base=p["rr_base"],
+        )
+        return r, _score(r)
+
+    pairs = await asyncio.gather(*(_one(p) for p in combos))
+
+    rows = []
+    for r, s in pairs:
+        rows.append({
+            "params": r.params,
+            "score": round(s, 3),
+            "win_rate": round(r.win_rate, 2),
+            "total_trades": r.total_trades,
+            "total_pl_pct": round(r.total_pl_pct, 2),
+            "expectancy": round(r.expectancy, 3),
+            "max_drawdown_pct": round(r.max_drawdown_pct, 2),
+            "elapsed_seconds": round(r.elapsed_seconds, 2),
+            "error": r.error,
+        })
+    rows.sort(key=lambda x: x["score"], reverse=True)
+
+    elapsed = (datetime.now(timezone.utc) - started).total_seconds()
+    return {
+        "symbol": symbol,
+        "period": period,
+        "interval": interval,
+        "combos_tested": len(combos),
+        "results": rows,
+        "best": rows[0] if rows else None,
+        "elapsed_seconds": round(elapsed, 2),
+        "started_at": started.isoformat(),
+        "finished_at": datetime.now(timezone.utc).isoformat(),
+    }
