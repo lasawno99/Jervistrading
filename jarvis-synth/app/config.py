@@ -17,12 +17,14 @@ REQUIRED = (
     "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL",
     "OANDA_API_TOKEN", "OANDA_ACCOUNT_ID", "OANDA_ENVIRONMENT",
     "TAVILY_API_KEY",
-    "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
     "INSTRUMENTS", "GRANULARITY", "LOOKBACK", "PRED_LEN", "SAMPLE_COUNT",
     "KRONOS_SIZE", "SCHEDULE_CRON",
     "TRADING_MODE", "MAX_POSITION_UNITS", "DAILY_LOSS_LIMIT_PCT",
     "BASE_POSITION_UNITS", "MIN_RR_RATIO",
 )
+
+# Telegram is OPTIONAL — if TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are missing or
+# TELEGRAM_ENABLED=false, the worker boots without Telegram and all alerts no-op.
 
 # Optional vars (have defaults, never crash if missing)
 PROFIT_LOCK_THRESHOLD_PCT_DEFAULT = "5.0"
@@ -40,6 +42,7 @@ class Config:
     tavily_api_key: str
     telegram_bot_token: str
     telegram_chat_id: str
+    telegram_enabled: bool
     instruments: List[str]
     granularity: str
     lookback: int
@@ -79,6 +82,15 @@ def load_config() -> Config:
         v = os.environ[name]
         return "".join(v.split())  # removes ALL whitespace including embedded \n
 
+    def _clean_optional(name: str) -> str:
+        v = os.environ.get(name, "")
+        return "".join(v.split())
+
+    tg_token = _clean_optional("TELEGRAM_BOT_TOKEN")
+    tg_chat = _clean_optional("TELEGRAM_CHAT_ID")
+    tg_flag = os.environ.get("TELEGRAM_ENABLED", "true").strip().lower() != "false"
+    telegram_enabled = bool(tg_token) and bool(tg_chat) and tg_flag
+
     return Config(
         anthropic_api_key=_clean("ANTHROPIC_API_KEY"),
         anthropic_model=os.environ["ANTHROPIC_MODEL"].strip(),
@@ -86,8 +98,9 @@ def load_config() -> Config:
         oanda_account_id=_clean("OANDA_ACCOUNT_ID"),
         oanda_environment="practice",
         tavily_api_key=_clean("TAVILY_API_KEY"),
-        telegram_bot_token=_clean("TELEGRAM_BOT_TOKEN"),
-        telegram_chat_id=_clean("TELEGRAM_CHAT_ID"),
+        telegram_bot_token=tg_token,
+        telegram_chat_id=tg_chat,
+        telegram_enabled=telegram_enabled,
         instruments=[i.strip() for i in os.environ["INSTRUMENTS"].split(",") if i.strip()],
         granularity=os.environ["GRANULARITY"].strip(),
         lookback=int(os.environ["LOOKBACK"]),

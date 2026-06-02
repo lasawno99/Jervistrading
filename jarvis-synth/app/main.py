@@ -53,6 +53,17 @@ def _configure_logging() -> None:
 log = structlog.get_logger()
 
 
+class _NullBot:
+    """No-op replacement for telegram.Bot when Telegram is paused.
+
+    Implements the only method this worker uses (`send_message`) as an
+    async no-op so every existing call site continues to work unchanged.
+    """
+
+    async def send_message(self, *args, **kwargs) -> None:  # noqa: D401
+        return None
+
+
 def format_decision(instrument: str, decision, kronos_sig) -> str:
     icon = {"LONG": "🟢", "SHORT": "🔴", "HOLD": "⚪"}[decision.action]
     units = decision.units if decision.action != "HOLD" else 0
@@ -356,7 +367,13 @@ async def main_async() -> None:
              base_units=cfg.base_position_units, kronos_size=cfg.kronos_size)
 
     state = GuardrailState()
-    bot = Bot(token=cfg.telegram_bot_token)
+    if cfg.telegram_enabled:
+        bot = Bot(token=cfg.telegram_bot_token)
+        log.info("telegram_enabled")
+    else:
+        bot = _NullBot()
+        log.info("telegram_paused",
+                 reason="TELEGRAM_ENABLED=false or token/chat_id missing")
 
     async def _send(text: str) -> None:
         await bot.send_message(chat_id=cfg.telegram_chat_id, text=text)
