@@ -1,3 +1,17 @@
+## Trading Cluster — Galaxy Drift (2026-06-04)
+
+User feedback: "cluster dots a little smaller, moving like galaxy stars."
+
+- Peer dots shrunk **48px → 36px** (border 2px → 1.5px, label 10px → 8.5px, change-pct 8px → 6.5px)
+- Each peer gets a unique slow orbital drift (~5.5–9s loop, ±3–6px x/y, opacity 0.88→1) via framer-motion `animate` keyframes — phases offset by index so they don't move in lockstep
+- Added 12 background twinkle stars (`<animate>` SVG opacity pulses) for galaxy depth
+- Center "YOU" bubble stays static as the anchor
+- Explicit width/height on `motion.button` fixed a 0×0 bounding-box bug introduced by the drift wrapper
+- File: `frontend/src/components/v2/TradingPeersCluster.jsx`
+
+---
+
+
 ## 3-Pod Strategy Ensemble in Backtest Lab (2026-06-04, **NEW**)
 
 Adds **Pod B (Mean-Reversion)** and **Pod C (Momentum/Breakout)** alongside the
