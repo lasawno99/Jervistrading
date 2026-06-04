@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
-import { Play, Beaker, Loader2, TrendingUp, TrendingDown, Sliders, ChevronRight, X, Award, Send, Check } from "lucide-react";
+import { Play, Beaker, Loader2, TrendingUp, TrendingDown, Sliders, ChevronRight, X, Award, Send, Check, GitCompareArrows, Layers, Lock, Unlock, Copy } from "lucide-react";
 import { toast } from "sonner";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -365,6 +365,454 @@ const TuneSheet = ({ open, symbol, period, onClose }) => {
   );
 };
 
+// --- Compare A vs Ensemble sheet (one-tap head-to-head + promote) ---
+const MetricCell = ({ label, single, ensemble, fmt = (v) => v, betterIfHigher = true }) => {
+  const sNum = Number.isFinite(single) ? single : 0;
+  const eNum = Number.isFinite(ensemble) ? ensemble : 0;
+  const better = betterIfHigher ? eNum > sNum : eNum < sNum;
+  const color = (eNum === sNum) ? "var(--text-2)" : better ? "var(--up)" : "var(--down)";
+  return (
+    <div className="grid grid-cols-3 gap-2 px-2 py-1.5 rounded text-[11px] tabular items-center"
+         style={{ background: "rgba(255,255,255,0.025)" }}>
+      <div className="text-white/55 uppercase tracking-[0.08em] text-[9px]">{label}</div>
+      <div className="text-right text-white/75">{fmt(sNum)}</div>
+      <div className="text-right font-semibold" style={{ color }}>{fmt(eNum)}</div>
+    </div>
+  );
+};
+
+const GateLight = ({ ok, label }) => (
+  <div className="flex items-center gap-1.5 text-[10px]">
+    <span
+      className="w-2 h-2 rounded-full"
+      style={{
+        background: ok ? "var(--up)" : "var(--down)",
+        boxShadow: ok ? "0 0 8px rgba(34,197,94,0.6)" : "none",
+      }}
+    />
+    <span className="text-white/65">{label}</span>
+  </div>
+);
+
+const CompareSheet = ({ open, symbol, period, interval, onClose }) => {
+  const [status, setStatus] = useState("idle"); // idle|running|done|error
+  const [result, setResult] = useState(null);
+  const [promoting, setPromoting] = useState(false);
+  const [promoted, setPromoted] = useState(false);
+  const cancelRef = React.useRef({ cancelled: false });
+
+  useEffect(() => {
+    if (open) { setStatus("idle"); setResult(null); setPromoted(false); }
+    return () => { cancelRef.current.cancelled = true; };
+  }, [open]);
+
+  const runCompare = async () => {
+    cancelRef.current = { cancelled: false };
+    setStatus("running"); setResult(null); setPromoted(false);
+    let cmpId;
+    try {
+      const r = await axios.post(`${API}/backtest/ensemble/compare`, {
+        symbol, period, interval, base_units: 1000,
+      }, { timeout: 15000 });
+      cmpId = r.data.compare_id;
+      if (!cmpId) throw new Error("No compare_id");
+    } catch (e) {
+      setStatus("error");
+      toast.error("Compare failed to start", { description: String(e?.response?.data?.detail || e?.message || e) });
+      return;
+    }
+    // Poll persisted endpoint
+    for (let i = 0; i < 60; i++) {
+      if (cancelRef.current.cancelled) return;
+      await new Promise((res) => setTimeout(res, 3000));
+      if (cancelRef.current.cancelled) return;
+      try {
+        const detail = await axios.get(`${API}/backtest/ensemble/compares/${cmpId}`, { timeout: 10000 });
+        if (detail.data?.single_pod && detail.data?.ensemble) {
+          setResult(detail.data);
+          setStatus("done");
+          return;
+        }
+      } catch (e) {
+        if (e?.response?.status !== 404) {
+          setStatus("error");
+          toast.error("Compare poll failed", { description: String(e?.message || e) });
+          return;
+        }
+      }
+    }
+    setStatus("error");
+    toast.error("Compare timed out", { description: "Try a shorter period." });
+  };
+
+  const promote = async () => {
+    if (!result?.promote_to_paper || !result?.request) return;
+    setPromoting(true);
+    try {
+      await axios.post(`${API}/instrument-configs/apply`, {
+        symbol,
+        params: {
+          tauric_floor: result.request.tauric_floor,
+          upside_high: result.request.upside_high,
+          upside_low: result.request.upside_low,
+          atr_mult: result.request.atr_mult,
+          rr_base: result.request.rr_base,
+        },
+        notes: `Promoted via ensemble compare (${period}/${interval}) · WR ${result.ensemble.win_rate}% PF ${result.ensemble.profit_factor}`,
+      }, { timeout: 10000 });
+      setPromoted(true);
+      toast.success(`Promoted ${symbol} to live workers`, {
+        description: "Workers will pick up these params on next cycle.",
+      });
+    } catch (e) {
+      toast.error("Promote failed", { description: String(e?.response?.data?.detail || e?.message || e) });
+    } finally {
+      setPromoting(false);
+    }
+  };
+
+  const fmtPct1 = (v) => (Number.isFinite(v) ? `${v.toFixed(1)}%` : "—");
+  const fmtNum3 = (v) => (Number.isFinite(v) ? v.toFixed(3) : "—");
+  const fmtSigned1 = (v) => (Number.isFinite(v) ? `${v >= 0 ? "+" : ""}${v.toFixed(2)}%` : "—");
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          className="fixed inset-0 z-[80] flex items-center justify-center p-4"
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          style={{ background: "rgba(8,8,12,0.65)", backdropFilter: "blur(14px)" }}
+          onClick={() => { cancelRef.current.cancelled = true; onClose?.(); }}
+          data-testid="backtest-compare-sheet"
+        >
+          <motion.div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-xl rounded-2xl p-5 max-h-[88vh] overflow-y-auto"
+            style={{ background: "rgba(18,18,26,0.96)", border: "1px solid var(--border-hi)" }}
+            initial={{ y: 30, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 30, opacity: 0 }}
+            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <header className="flex items-start justify-between mb-3 gap-2">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center"
+                     style={{ background: "rgba(155,123,255,0.15)", color: "var(--accent-2)" }}>
+                  <GitCompareArrows size={15} />
+                </div>
+                <div>
+                  <h3 className="text-[15px] font-semibold tracking-tight leading-none">
+                    Pod A vs 3-Pod Ensemble
+                  </h3>
+                  <div className="text-[10px] text-white/45 mt-1">
+                    {symbol} · {period} · {interval} · 2-of-3 unanimous voting
+                  </div>
+                </div>
+              </div>
+              <button onClick={() => { cancelRef.current.cancelled = true; onClose?.(); }}
+                      className="w-7 h-7 rounded-lg flex items-center justify-center text-white/55 hover:text-white"
+                      aria-label="Close">
+                <X size={16} />
+              </button>
+            </header>
+
+            {status === "idle" && (
+              <div className="text-center py-6">
+                <div className="text-[12px] text-white/65 leading-relaxed mb-4">
+                  Runs single-pod (Tauric+Kronos) AND 3-pod ensemble back-to-back on the same
+                  data window. Promote-gate clears when ≥3 of 4 metrics improve:
+                  <span className="block mt-2 text-[10px] text-white/45">
+                    WR↑ · Profit Factor↑ · Sharpe↑ · Max Drawdown↓
+                  </span>
+                </div>
+                <button
+                  onClick={runCompare}
+                  className="px-5 py-2.5 rounded-lg text-[12px] font-semibold"
+                  style={{
+                    background: "linear-gradient(135deg, var(--accent-1), var(--accent-2))",
+                    color: "#fff",
+                    boxShadow: "0 6px 14px rgba(108,141,255,0.35)",
+                  }}
+                  data-testid="compare-run-button"
+                >
+                  <Play size={12} className="inline mr-1.5" />
+                  Run Head-to-Head
+                </button>
+              </div>
+            )}
+
+            {status === "running" && (
+              <div className="flex flex-col items-center py-10">
+                <Loader2 size={28} className="animate-spin text-white/65" />
+                <div className="text-[12px] text-white/65 mt-3">Running both backtests…</div>
+                <div className="text-[10px] text-white/35 mt-1">Up to ~2 min for 180d 1h</div>
+              </div>
+            )}
+
+            {status === "error" && (
+              <div className="text-center py-6">
+                <div className="text-[12px] text-white/65 mb-3">Compare failed.</div>
+                <button onClick={runCompare}
+                        className="px-4 py-2 rounded-lg text-[11px] font-semibold bg-white/10 hover:bg-white/15">
+                  Retry
+                </button>
+              </div>
+            )}
+
+            {status === "done" && result && (
+              <>
+                <div className="grid grid-cols-3 gap-2 px-2 pb-1 text-[9px] tracking-[0.10em] uppercase text-white/40">
+                  <div>Metric</div>
+                  <div className="text-right">Single (Pod A)</div>
+                  <div className="text-right">Ensemble</div>
+                </div>
+                <div className="space-y-1 mb-3" data-testid="compare-metrics">
+                  <MetricCell label="Trades" single={result.single_pod.total_trades} ensemble={result.ensemble.total_trades} fmt={(v) => v} betterIfHigher={true} />
+                  <MetricCell label="Win Rate" single={result.single_pod.win_rate} ensemble={result.ensemble.win_rate} fmt={fmtPct1} />
+                  <MetricCell label="Net P/L" single={result.single_pod.total_pl_pct} ensemble={result.ensemble.total_pl_pct} fmt={fmtSigned1} />
+                  <MetricCell label="Profit Factor" single={result.single_pod.profit_factor} ensemble={result.ensemble.profit_factor} fmt={fmtNum3} />
+                  <MetricCell label="Sharpe" single={result.single_pod.sharpe_ratio} ensemble={result.ensemble.sharpe_ratio} fmt={fmtNum3} />
+                  <MetricCell label="Max Drawdown" single={result.single_pod.max_drawdown_pct} ensemble={result.ensemble.max_drawdown_pct} fmt={fmtPct1} betterIfHigher={false} />
+                </div>
+
+                <div className="rounded-lg p-3 mb-3"
+                     style={{
+                       background: result.promote_to_paper ? "rgba(34,197,94,0.08)" : "rgba(245,158,11,0.06)",
+                       border: `1px solid ${result.promote_to_paper ? "rgba(34,197,94,0.35)" : "rgba(245,158,11,0.30)"}`,
+                     }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] tracking-[0.12em] uppercase text-white/55">Promote Gate</span>
+                    <span className="text-[11px] font-semibold"
+                          style={{ color: result.promote_to_paper ? "var(--up)" : "var(--warn)" }}>
+                      {result.promote_to_paper ? "✓ Cleared (≥3 of 4)" : "✗ Not cleared"}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <GateLight ok={result.promote_gate.win_rate_up} label="Win rate ↑" />
+                    <GateLight ok={result.promote_gate.profit_factor_up} label="Profit factor ↑" />
+                    <GateLight ok={result.promote_gate.sharpe_up} label="Sharpe ↑" />
+                    <GateLight ok={result.promote_gate.drawdown_down} label="Max drawdown ↓" />
+                  </div>
+                </div>
+
+                <button
+                  onClick={promote}
+                  disabled={!result.promote_to_paper || promoting || promoted}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-[12px] font-semibold transition disabled:opacity-50"
+                  style={{
+                    background: promoted ? "rgba(34,197,94,0.20)" :
+                                result.promote_to_paper ? "linear-gradient(135deg, var(--up), #16a34a)" :
+                                "rgba(255,255,255,0.04)",
+                    color: result.promote_to_paper ? "#fff" : "var(--text-2)",
+                    border: promoted ? "1px solid rgba(34,197,94,0.45)" : "none",
+                    boxShadow: promoted ? "none" :
+                               result.promote_to_paper ? "0 6px 14px rgba(34,197,94,0.35)" : "none",
+                  }}
+                  data-testid="compare-promote-button"
+                >
+                  {promoting && <Loader2 size={13} className="animate-spin" />}
+                  {!promoting && promoted && <Check size={13} />}
+                  {!promoting && !promoted && (result.promote_to_paper ? <Send size={13} /> : <Lock size={13} />)}
+                  {promoting ? "Promoting…" :
+                   promoted ? "Promoted · workers will use these params" :
+                   result.promote_to_paper ? "Promote to Live Workers" :
+                   "Gate locked — at least 3 of 4 metrics must improve"}
+                </button>
+
+                <div className="mt-3 text-[10px] text-white/45 leading-relaxed">
+                  Promote writes the validated params to <code className="text-white/65">instrument_configs</code>.
+                  Workers poll this on their next cycle and adopt the new floor/upside/ATR/R:R automatically.
+                  Pod B & C votes are evaluation-only — they don't run live yet.
+                </div>
+              </>
+            )}
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+};
+
+// --- Scaling readiness panel (5 → 10 instruments gate) ---
+const ScalingReadinessPanel = () => {
+  const [data, setData] = useState(null);
+  const [promoting, setPromoting] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const load = async () => {
+    try {
+      const r = await axios.get(`${API}/scaling/readiness`, { timeout: 10000 });
+      setData(r.data);
+    } catch {}
+  };
+
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 30000);
+    return () => clearInterval(t);
+  }, []);
+
+  const onPromote = async () => {
+    setPromoting(true);
+    try {
+      const r = await axios.post(`${API}/scaling/promote`, { confirm: true }, { timeout: 10000 });
+      toast.success("Scaled to 10 instruments", {
+        description: "Copy the Railway env command below and update INSTRUMENTS.",
+      });
+      setData((d) => ({ ...d, already_promoted: true, promoted_at: r.data.promoted_at }));
+    } catch (e) {
+      toast.error("Scale failed", { description: String(e?.response?.data?.detail || e?.message || e) });
+    } finally {
+      setPromoting(false);
+    }
+  };
+
+  if (!data) return null;
+  const { stats, gate, current_instruments, proposed_instruments, scaled_instruments, already_promoted } = data;
+  const ready = gate.clear;
+  const railwayCmd = `INSTRUMENTS=${scaled_instruments.join(",")}`;
+
+  const copyCmd = async () => {
+    try {
+      await navigator.clipboard.writeText(railwayCmd);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+      toast.success("Copied to clipboard");
+    } catch {
+      toast.error("Copy failed");
+    }
+  };
+
+  return (
+    <div
+      className="mt-4 rounded-xl p-4"
+      style={{
+        background: "rgba(255,255,255,0.02)",
+        border: `1px solid ${ready ? "rgba(34,197,94,0.30)" : "rgba(255,255,255,0.08)"}`,
+      }}
+      data-testid="scaling-readiness-panel"
+    >
+      <header className="flex items-center justify-between gap-2 mb-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center"
+               style={{ background: "rgba(34,197,94,0.12)", color: "var(--up)" }}>
+            <Layers size={13} />
+          </div>
+          <div>
+            <h4 className="text-[13px] font-semibold tracking-tight leading-none">
+              Scale jarvis-synth · 5 → 10 instruments
+            </h4>
+            <div className="text-[10px] text-white/45 mt-1">
+              Gate: ≥{gate.min_trades} closed trades · ≥{gate.min_win_rate}% WR
+            </div>
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="text-[10px] uppercase tracking-[0.10em] text-white/40">Status</div>
+          <div className="text-[12px] font-semibold"
+               style={{ color: ready ? "var(--up)" : "var(--warn)" }}>
+            {already_promoted ? "✓ Promoted" : ready ? "✓ Ready" : "✗ Locked"}
+          </div>
+        </div>
+      </header>
+
+      <div className="grid grid-cols-3 gap-2 mb-3">
+        <div className="rounded-lg p-2.5" style={{ background: "rgba(255,255,255,0.025)" }}>
+          <div className="text-[9px] uppercase tracking-[0.10em] text-white/40">Closed Trades</div>
+          <div className="flex items-baseline gap-1 mt-1">
+            <span className="text-[16px] font-semibold tabular"
+                  style={{ color: gate.trades_ok ? "var(--up)" : "var(--warn)" }}>
+              {stats.closed_trades}
+            </span>
+            <span className="text-[10px] text-white/40">/ {gate.min_trades}</span>
+          </div>
+        </div>
+        <div className="rounded-lg p-2.5" style={{ background: "rgba(255,255,255,0.025)" }}>
+          <div className="text-[9px] uppercase tracking-[0.10em] text-white/40">Win Rate</div>
+          <div className="flex items-baseline gap-1 mt-1">
+            <span className="text-[16px] font-semibold tabular"
+                  style={{ color: gate.wr_ok ? "var(--up)" : "var(--warn)" }}>
+              {stats.win_rate.toFixed(1)}%
+            </span>
+            <span className="text-[10px] text-white/40">/ {gate.min_win_rate}%</span>
+          </div>
+        </div>
+        <div className="rounded-lg p-2.5 flex flex-col justify-center items-center" style={{ background: "rgba(255,255,255,0.025)" }}>
+          {ready ? <Unlock size={16} className="text-[var(--up)]" /> : <Lock size={16} className="text-white/35" />}
+          <div className="text-[9px] uppercase tracking-[0.10em] mt-1 text-white/40">
+            {ready ? "Unlocked" : "Locked"}
+          </div>
+        </div>
+      </div>
+
+      <div className="mb-3">
+        <div className="text-[9px] uppercase tracking-[0.10em] text-white/40 mb-1">Current (5)</div>
+        <div className="flex flex-wrap gap-1">
+          {current_instruments.map((s) => (
+            <span key={s} className="text-[10px] px-2 py-0.5 rounded tabular"
+                  style={{ background: "rgba(108,141,255,0.10)", color: "var(--accent-1)" }}>
+              {s}
+            </span>
+          ))}
+        </div>
+        <div className="text-[9px] uppercase tracking-[0.10em] text-white/40 mb-1 mt-2">+ Proposed (5)</div>
+        <div className="flex flex-wrap gap-1">
+          {proposed_instruments.map((s) => (
+            <span key={s} className="text-[10px] px-2 py-0.5 rounded tabular"
+                  style={{
+                    background: ready ? "rgba(34,197,94,0.10)" : "rgba(255,255,255,0.04)",
+                    color: ready ? "var(--up)" : "var(--text-2)",
+                  }}>
+              {s}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <button
+        onClick={onPromote}
+        disabled={!ready || promoting || already_promoted}
+        className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-[12px] font-semibold transition disabled:opacity-50 mb-2"
+        style={{
+          background: already_promoted ? "rgba(34,197,94,0.20)" :
+                      ready ? "linear-gradient(135deg, var(--up), #16a34a)" :
+                      "rgba(255,255,255,0.04)",
+          color: ready || already_promoted ? "#fff" : "var(--text-2)",
+          border: already_promoted ? "1px solid rgba(34,197,94,0.45)" : "none",
+          boxShadow: ready && !already_promoted ? "0 6px 14px rgba(34,197,94,0.35)" : "none",
+        }}
+        data-testid="scaling-promote-button"
+      >
+        {promoting && <Loader2 size={13} className="animate-spin" />}
+        {!promoting && already_promoted && <Check size={13} />}
+        {!promoting && !already_promoted && (ready ? <Send size={13} /> : <Lock size={13} />)}
+        {promoting ? "Promoting…" :
+         already_promoted ? "Promoted · update Railway INSTRUMENTS below" :
+         ready ? "Scale to 10 Instruments" :
+         `Locked — need ${Math.max(0, gate.min_trades - stats.closed_trades)} more trades & ${Math.max(0, gate.min_win_rate - stats.win_rate).toFixed(1)}% higher WR`}
+      </button>
+
+      {already_promoted && (
+        <div className="rounded-lg p-2.5" style={{ background: "rgba(8,8,12,0.55)", border: "1px solid rgba(255,255,255,0.08)" }}>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[9px] uppercase tracking-[0.10em] text-white/45">Railway env command</span>
+            <button onClick={copyCmd}
+                    className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded hover:bg-white/5"
+                    data-testid="scaling-copy-env">
+              {copied ? <Check size={10} className="text-[var(--up)]" /> : <Copy size={10} />}
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+          <code className="block text-[10px] text-white/75 break-all leading-relaxed font-mono">
+            {railwayCmd}
+          </code>
+          <div className="text-[9px] text-white/40 mt-1.5">
+            Paste this into Railway → jarvis-synth → Variables → INSTRUMENTS, then restart the worker.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const BacktestLab = ({ delay = 0.15 }) => {
   const [symbol, setSymbol] = useState("BTC/USD");
   const [period, setPeriod] = useState("180d");
@@ -374,6 +822,7 @@ export const BacktestLab = ({ delay = 0.15 }) => {
   const [runs, setRuns] = useState([]);
   const [drilldown, setDrilldown] = useState(null);
   const [tuneOpen, setTuneOpen] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
 
   const openRun = async (run) => {
     try {
@@ -449,6 +898,21 @@ export const BacktestLab = ({ delay = 0.15 }) => {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setCompareOpen(true)}
+            disabled={running}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold disabled:opacity-50 transition"
+            style={{
+              background: "rgba(155,123,255,0.16)",
+              color: "var(--accent-2)",
+              border: "1px solid rgba(155,123,255,0.32)",
+            }}
+            data-testid="backtest-compare-button"
+            title="Head-to-head: single-pod (Pod A) vs 3-pod ensemble (2-of-3 voting)"
+          >
+            <GitCompareArrows size={12} />
+            Compare A vs Ensemble
+          </button>
           <button
             onClick={() => setTuneOpen(true)}
             disabled={running}
@@ -567,6 +1031,10 @@ export const BacktestLab = ({ delay = 0.15 }) => {
 
       <RunDrilldownModal run={drilldown} onClose={() => setDrilldown(null)} />
       <TuneSheet open={tuneOpen} symbol={symbol} period={period} onClose={() => setTuneOpen(false)} />
+      <CompareSheet open={compareOpen} symbol={symbol} period={period} interval={interval} onClose={() => setCompareOpen(false)} />
+
+      {/* Instrument scaling readiness — P1 gate (5 → 10 instruments) */}
+      <ScalingReadinessPanel />
     </motion.section>
   );
 };

@@ -1,3 +1,40 @@
+## Compare UI + Scaling Readiness Gate (2026-06-04)
+
+Wired the ensemble compare endpoint into the dashboard + added a 5→10 instrument scaling-readiness card.
+
+### Compare A vs Ensemble (Backtest Lab modal)
+- New "Compare A vs Ensemble" button in BacktestLab header
+- `CompareSheet` modal calls `POST /api/backtest/ensemble/compare` and polls every 3s for results
+- Side-by-side metrics table: Trades / Win Rate / Net P/L / Profit Factor / Sharpe / Max Drawdown — each row color-coded green/red based on which side won
+- 4-light **Promote Gate** panel (Win rate↑ · Profit factor↑ · Sharpe↑ · Max drawdown↓)
+- **"Promote to Live Workers"** button enabled ONLY when `promote_to_paper === true`. On click, POSTs the validated params to existing `/api/instrument-configs/apply` so workers pick them up on next cycle.
+
+### Scaling Readiness Panel (P1 gate, 5 → 10 instruments)
+- Always-visible card below BacktestLab
+- New backend `/api/scaling/readiness` GET — reports `closed_trades` count + WR + gate-clear bool + current/proposed instrument lists
+- New backend `/api/scaling/promote` POST — rejects with 409 unless `≥20 closed trades AND ≥40% WR`. On success, writes a `scaling_state` doc with the `INSTRUMENTS=...` Railway env command.
+- UI shows: current trades (1/20), current WR (0.0%/40%), Locked/Unlocked status, all 10 instrument chips, and a "Scale to 10" button that dynamically tells you exactly how many more trades + how much higher WR is needed.
+- When promoted: displays a copyable `INSTRUMENTS=EUR_USD,GBP_USD,USD_JPY,AUD_USD,XAU_USD,USD_CHF,USD_CAD,NZD_USD,EUR_GBP,EUR_JPY` block for the user to paste into Railway → jarvis-synth Variables.
+
+### Tests
+- 5/5 backend regression tests in `backend/tests/test_scaling_routes.py` (locked/cleared/promote-rejected/promote-succeeded/confirm-required)
+- Visual end-to-end verified: modal opens, compare runs in ~3s, gate panel renders correctly with 4 red lights for 0-trade scenario.
+
+### Configurable gate thresholds
+- `SCALING_MIN_TRADES` (default 20) and `SCALING_MIN_WR` (default 40.0) read from env so the user can adjust without code changes.
+
+### Files
+- `backend/scaling_routes.py` (NEW)
+- `backend/server.py` (registered `/api/scaling/*`)
+- `backend/tests/test_scaling_routes.py` (NEW — 5 tests)
+- `frontend/src/components/v2/BacktestLab.jsx` (+ CompareSheet, + ScalingReadinessPanel, + Compare button)
+
+### Worker scope (unchanged per user rule)
+Workers `/app/jarvis-synth/*` and `/app/jarvis-synth-alpaca/*` not modified. Promoting just writes config records; the user updates Railway INSTRUMENTS manually using the surfaced command.
+
+---
+
+
 ## Trading Cluster — Galaxy Drift (2026-06-04)
 
 User feedback: "cluster dots a little smaller, moving like galaxy stars."
