@@ -1,3 +1,19 @@
+## Trading Cluster — Profit-First Center (2026-06-04)
+
+User feedback: "Remove the blue center dot. Show profits (e.g. +$42,000) and what cash I can pull out."
+
+- Removed the gradient blue YOU bubble in `TradingPeersCluster.jsx`
+- Center now shows **3 text-only lines**:
+  - Big glowing **+$X** profit number (green if up, red if down) — `cluster-profit` testid
+  - Tiny "PROFIT" label
+  - **$X cash** in accent-blue — locked-profits amount (the auto-secured/withdrawable bucket from the profit-lock ledger), only shown when > 0 — `cluster-cash` testid
+- `STARTING_BALANCE` = $300,000 (3 brokers × $100K paper inception) — single constant at the top of the file for easy adjustment when real broker accounts are added
+- Total combined wealth no longer surfaced here — surface is profit-focused per user direction
+- Galaxy peer dots + drift + twinkle stars unchanged
+
+---
+
+
 ## Compare UI + Scaling Readiness Gate (2026-06-04)
 
 Wired the ensemble compare endpoint into the dashboard + added a 5→10 instrument scaling-readiness card.

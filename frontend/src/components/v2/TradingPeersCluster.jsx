@@ -20,9 +20,20 @@ const COLORS = {
 };
 const colorFor = (n) => COLORS[n.status] || COLORS.neutral;
 
+// Starting balance = 3 brokers × $100K paper-trading inception.
+// Single source of truth — adjust here when real broker accounts are added.
+const STARTING_BALANCE = 300_000;
+
+const fmtAbsMoney = (v) =>
+  new Intl.NumberFormat("en-US", {
+    style: "currency", currency: "USD",
+    minimumFractionDigits: 0, maximumFractionDigits: 0,
+  }).format(Math.abs(Number.isFinite(v) ? v : 0));
+
 export const TradingPeersCluster = ({ onSelect }) => {
   const [data, setData] = useState({ nodes: [] });
   const [combinedWealth, setCombinedWealth] = useState(0);
+  const [lockedProfits, setLockedProfits] = useState(0);
   const [active, setActive] = useState(null);
 
   useEffect(() => {
@@ -36,12 +47,18 @@ export const TradingPeersCluster = ({ onSelect }) => {
         if (!alive) return;
         setData(p.data);
         setCombinedWealth(b.data?.combined?.total_wealth ?? 0);
+        setLockedProfits(b.data?.combined?.locked_profits ?? 0);
       } catch {}
     };
     load();
     const t = setInterval(load, 20000);
     return () => { alive = false; clearInterval(t); };
   }, []);
+
+  const profit = combinedWealth - STARTING_BALANCE;
+  const isUp = profit >= 0;
+  const profitColor = isUp ? "var(--up)" : "var(--down)";
+  const profitGlow = isUp ? "rgba(34,197,94,0.45)" : "rgba(239,68,68,0.45)";
 
   const allNodes = useMemo(() => data.nodes || [], [data]);
   const nodes = useMemo(() => {
@@ -129,23 +146,38 @@ export const TradingPeersCluster = ({ onSelect }) => {
         </svg>
 
         <motion.div
-          className="absolute"
+          className="absolute pointer-events-none"
           style={{ left: "50%", top: "50%", transform: "translate(-50%, -50%)" }}
           initial={{ scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
           transition={{ duration: 0.6, delay: 0.3, ease: [0.22, 1, 0.36, 1] }}
         >
           <div
-            className="rounded-full flex flex-col items-center justify-center node-pulse"
-            style={{
-              width: 80, height: 80,
-              background: "radial-gradient(circle at 30% 30%, rgba(255,255,255,0.95), var(--accent-1) 40%, var(--accent-2) 100%)",
-              boxShadow: "0 0 36px rgba(108,141,255,0.55), inset 0 0 16px rgba(255,255,255,0.25)",
-              "--node-glow": "rgba(108,141,255,0.65)",
-            }}
+            className="flex flex-col items-center justify-center text-center"
+            style={{ minWidth: 96 }}
             data-testid="cluster-center"
           >
-            <span className="text-[11px] font-semibold tracking-wide text-white/95">YOU</span>
-            <span className="text-[10px] font-medium tabular text-white/85 mt-0.5">{fmtMoney(combinedWealth)}</span>
+            <span
+              className="text-[20px] font-bold tabular leading-none tracking-tight"
+              style={{
+                color: profitColor,
+                textShadow: `0 0 18px ${profitGlow}, 0 0 6px ${profitGlow}`,
+              }}
+              data-testid="cluster-profit"
+            >
+              {isUp ? "+" : "−"}{fmtAbsMoney(profit)}
+            </span>
+            <span className="text-[8px] tracking-[0.16em] uppercase text-white/40 mt-1.5 font-medium">
+              Profit
+            </span>
+            {lockedProfits > 0 && (
+              <span
+                className="text-[10px] tabular font-semibold mt-2"
+                style={{ color: "var(--accent-1)" }}
+                data-testid="cluster-cash"
+              >
+                {fmtAbsMoney(lockedProfits)} cash
+              </span>
+            )}
           </div>
         </motion.div>
 
