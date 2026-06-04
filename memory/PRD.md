@@ -1,3 +1,75 @@
+## 3-Pod Strategy Ensemble in Backtest Lab (2026-06-04, **NEW**)
+
+Adds **Pod B (Mean-Reversion)** and **Pod C (Momentum/Breakout)** alongside the
+existing **Pod A (Tauric+Kronos)** with a strict **2-of-3 voting** gate. Lives in
+the Backtest Lab only — worker code untouched. Compares ensemble vs single-pod
+side-by-side; promotes to paper only when ≥3 of 4 metrics improve.
+
+### New backend files / changes
+- `backend/strategy_pods.py` — 3 pure-numpy pod functions + `ensemble_vote()` +
+  `vote_concurrently()` (asyncio.gather with per-pod 30s timeout).
+  • Pod A = thin adapter over existing `kronos_surrogate` + `tauric_deterministic`
+    + `synthesize` (no logic change — by design).
+  • Pod B = RSI + Bollinger Band fade, gated by **low vol** (`vol_amp < 1.10`).
+  • Pod C = Donchian-20 break + ADX-14 ≥ 22, gated by **high vol** (`vol_amp ≥ 0.95`).
+- `backend/backtest_engine.py` — adds:
+  • `EnsembleResult` dataclass (extends with `profit_factor`, `sharpe_ratio`, `pod_stats`).
+  • `run_backtest_ensemble()` — mirrors `run_backtest`'s data/MTF/ATR/sizer/exit
+    logic exactly (strict parity), only entry signal changes.
+  • `_profit_factor_and_sharpe()` helper — now populates these on `BacktestResult` too.
+- `backend/backtest_routes.py` — new endpoints:
+  • `POST /api/backtest/ensemble/run` → returns `run_id`
+  • `GET  /api/backtest/ensemble/active`
+  • `GET  /api/backtest/ensemble/runs/{id}`
+  • `POST /api/backtest/ensemble/compare` → runs single-pod + ensemble back-to-back
+  • `GET  /api/backtest/ensemble/compares/active`
+  • `GET  /api/backtest/ensemble/compares/{id}` → includes `promote_gate` + `promote_to_paper`
+- `backend/tests/test_strategy_pods.py` — 11 regression tests (all passing).
+
+### Promote gate (ensemble vs single-pod, same window)
+1. `win_rate_up`     — ensemble WR > single WR
+2. `profit_factor_up` — ensemble PF > single PF
+3. `sharpe_up`       — ensemble Sharpe > single Sharpe
+4. `drawdown_down`   — ensemble max DD < single max DD
+→ **promote_to_paper = True only when ≥3 of 4 improve**
+
+### Validation runs (real yfinance data, preview env)
+| Symbol     | Period | Single-pod                              | Ensemble                          | Gate    |
+|------------|--------|-----------------------------------------|-----------------------------------|---------|
+| BTC/USD    | 30d 1h | 0 trades                                | 0 trades                          | block   |
+| NVDA       | 180d 1h (floor=7) | 16 trades / 12.5% WR / −18.3% PnL / DD 18.4% | 0 trades            | block   |
+| ETH/USD    | 180d 1h (floor=7) | 19 trades / 36.8% WR / +8.17% PnL / PF 1.35 / Sharpe 0.55 / DD 12.7% | 2 trades / 0% WR / −4.47% PnL / DD 4.5% | **block** (1/4 gates passed) |
+
+Gate correctly refuses to promote in all three cases. Ensemble is **highly
+selective** by design (Pod B/C have inverse vol-regime gates, so 2-of-3 ≈
+"Pod A + 1 confirming regime pod").
+
+### Strict parity guarantees
+- Same data source (yfinance via `_fetch_bars`), same period/interval.
+- Same warmup window (bars 40 .. end-1), same one-trade-at-a-time.
+- Same ATR-based SL/TP, same exit logic (SL/TP touch in bar high/low).
+- Same `size_position()` sizer, same conviction multipliers.
+- MTF + indicator confluence gates still applied AFTER ensemble agrees.
+
+### Worker scope (unchanged)
+- `/app/jarvis-synth/*` — untouched
+- `/app/jarvis-synth-alpaca/*` — untouched
+- Per user direction: do NOT modify the existing Tauric strategy logic. Pods B/C
+  are evaluation-only until promote-gate clears on real-world held-out windows.
+
+---
+
+## Telegram Paused (2026-06-04)
+
+User paused Telegram alerts on both workers (`jarvis-synth` and `jarvis-synth-alpaca`).
+- `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` are now **optional** in `config.py`.
+- Workers boot without Telegram and use a `_NullBot` no-op for every send call.
+- Force-disable via `TELEGRAM_ENABLED=false` even when creds are present.
+- 83 worker tests still pass.
+
+---
+
+
 ## Mobile-First Single-Screen Dashboard (2026-05-19, **NEW**)
 
 Final mobile UX pass per user mockup. Dashboard tab is now a fixed-height single-screen view on mobile — **zero vertical scroll** at 393×852 (iPhone 14 Pro).

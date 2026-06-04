@@ -302,6 +302,8 @@ class BacktestResult:
     avg_win_pct: float = 0.0
     avg_loss_pct: float = 0.0
     max_drawdown_pct: float = 0.0
+    profit_factor: float = 0.0
+    sharpe_ratio: float = 0.0
     elapsed_seconds: float = 0.0
     started_at: str = ""
     finished_at: str = ""
@@ -513,6 +515,281 @@ async def run_backtest(
         + ((1 - result.win_rate / 100.0)) * result.avg_loss_pct
     )
     result.max_drawdown_pct = max_dd
+    result.profit_factor, result.sharpe_ratio = _profit_factor_and_sharpe(trades)
+    result.elapsed_seconds = (datetime.now(timezone.utc) - started).total_seconds()
+    result.finished_at = datetime.now(timezone.utc).isoformat()
+    return result
+
+
+def _profit_factor_and_sharpe(trades) -> Tuple[float, float]:
+    """Per-trade Profit Factor and (unannualized) Sharpe ratio.
+
+    PF = sum(winning pl_pct) / |sum(losing pl_pct)|  (infinity if no losers → cap 99.0)
+    Sharpe = mean(pl_pct) / std(pl_pct) * sqrt(N)    (returns 0 if <2 trades / no variance)
+    """
+    if not trades:
+        return 0.0, 0.0
+    pls = np.array([t.pl_pct for t in trades], dtype=float)
+    wins_sum = float(pls[pls > 0].sum())
+    losses_sum = float(-pls[pls < 0].sum())  # positive magnitude
+    pf = (wins_sum / losses_sum) if losses_sum > 0 else (99.0 if wins_sum > 0 else 0.0)
+    if len(pls) < 2:
+        return round(pf, 3), 0.0
+    sd = float(np.std(pls, ddof=1))
+    if sd == 0:
+        return round(pf, 3), 0.0
+    sharpe = float(pls.mean() / sd * np.sqrt(len(pls)))
+    return round(pf, 3), round(sharpe, 3)
+
+
+# ---------- Ensemble (3-pod) backtest --------------------------------------
+
+@dataclass
+class EnsembleResult:
+    run_id: str
+    symbol: str
+    yf_symbol: str
+    bars: int
+    mode: str = "ensemble"
+    trades: List[Dict[str, Any]] = field(default_factory=list)
+    total_trades: int = 0
+    wins: int = 0
+    losses: int = 0
+    win_rate: float = 0.0
+    expectancy: float = 0.0
+    total_pl_pct: float = 0.0
+    avg_win_pct: float = 0.0
+    avg_loss_pct: float = 0.0
+    max_drawdown_pct: float = 0.0
+    profit_factor: float = 0.0
+    sharpe_ratio: float = 0.0
+    # ensemble-specific tally — how often each direction passed 2-of-3
+    pod_stats: Dict[str, Any] = field(default_factory=dict)
+    elapsed_seconds: float = 0.0
+    started_at: str = ""
+    finished_at: str = ""
+    error: Optional[str] = None
+    params: Dict[str, Any] = field(default_factory=dict)
+
+
+async def run_backtest_ensemble(
+    symbol: str,
+    period: str = "60d",
+    interval: str = "1h",
+    base_units: int = 1000,
+    *,
+    tauric_floor: int = 8,
+    upside_high: float = 0.70,
+    upside_low: float = 0.30,
+    atr_mult: float = 1.5,
+    rr_base: float = 2.0,
+    per_pod_timeout_s: float = 30.0,
+) -> EnsembleResult:
+    """Replay the SAME pipeline as run_backtest, but pod-vote entries via 2-of-3.
+
+    Strict parity guarantees (vs run_backtest):
+      • Same data source (yfinance via _fetch_bars), same period/interval.
+      • Same warmup (bars 40..end-1), same one-trade-at-a-time discipline.
+      • Same ATR-based SL/TP and exit logic (SL/TP hit checks identical).
+      • Same position sizer (size_position).
+      • Same MTF agreement + indicator confluence gates applied AFTER ensemble agrees.
+
+    The ONLY change vs run_backtest is the entry signal: we ask 3 pods, and
+    only enter when ≥2 agree on direction.
+    """
+    import strategy_pods as sp
+
+    run_id = uuid.uuid4().hex[:12]
+    started = datetime.now(timezone.utc)
+    yf_symbol = map_symbol(symbol)
+
+    result = EnsembleResult(
+        run_id=run_id, symbol=symbol, yf_symbol=yf_symbol,
+        bars=0, started_at=started.isoformat(),
+        params={
+            "tauric_floor": tauric_floor,
+            "upside_high": upside_high,
+            "upside_low": upside_low,
+            "atr_mult": atr_mult,
+            "rr_base": rr_base,
+            "per_pod_timeout_s": per_pod_timeout_s,
+        },
+    )
+
+    try:
+        df = await asyncio.to_thread(_fetch_bars, yf_symbol, period, interval)
+    except Exception as e:
+        result.error = f"fetch_failed: {e}"
+        result.finished_at = datetime.now(timezone.utc).isoformat()
+        return result
+
+    df = df.dropna(subset=["close", "high", "low"]).reset_index(drop=True)
+    result.bars = len(df)
+    if len(df) < 50:
+        result.error = "not_enough_bars"
+        result.finished_at = datetime.now(timezone.utc).isoformat()
+        return result
+
+    closes = df["close"].astype(float).to_numpy()
+    highs = df["high"].astype(float).to_numpy()
+    lows = df["low"].astype(float).to_numpy()
+    times = df["datetime"].astype(str).tolist() if "datetime" in df.columns else df.iloc[:, 0].astype(str).tolist()
+
+    def _mtf_closes(i):
+        win = closes[max(0, i - 120):i + 1]
+        return np.array([win[max(0, j - 3):j + 1].mean() for j in range(0, len(win), 4) if j > 0])
+
+    trades: List[TradeRecord] = []
+    open_trade: Optional[TradeRecord] = None
+    equity = 1.0
+    peak_equity = 1.0
+    max_dd = 0.0
+
+    # Tally of pod agreement patterns over the run (diagnostic).
+    pod_tally = {
+        "a_long": 0, "a_short": 0, "a_hold": 0,
+        "b_long": 0, "b_short": 0, "b_hold": 0,
+        "c_long": 0, "c_short": 0, "c_hold": 0,
+        "ensemble_long": 0, "ensemble_short": 0, "ensemble_hold": 0,
+    }
+
+    pod_a_kw = {
+        "tauric_floor": tauric_floor,
+        "upside_high": upside_high,
+        "upside_low": upside_low,
+        "base_units": base_units,
+    }
+
+    for i in range(40, len(df) - 1):
+        # Manage open trade exits — identical to run_backtest
+        if open_trade is not None:
+            hi = highs[i]
+            lo = lows[i]
+            exited = False
+            if open_trade.side == "LONG":
+                if lo <= open_trade.sl:
+                    open_trade.exit_price = open_trade.sl
+                    open_trade.exit_reason = "sl"
+                    exited = True
+                elif hi >= open_trade.tp:
+                    open_trade.exit_price = open_trade.tp
+                    open_trade.exit_reason = "tp"
+                    exited = True
+            else:
+                if hi >= open_trade.sl:
+                    open_trade.exit_price = open_trade.sl
+                    open_trade.exit_reason = "sl"
+                    exited = True
+                elif lo <= open_trade.tp:
+                    open_trade.exit_price = open_trade.tp
+                    open_trade.exit_reason = "tp"
+                    exited = True
+            if exited:
+                open_trade.exit_time = times[i]
+                if open_trade.side == "LONG":
+                    open_trade.pl_pct = (open_trade.exit_price - open_trade.entry_price) / open_trade.entry_price * 100
+                else:
+                    open_trade.pl_pct = (open_trade.entry_price - open_trade.exit_price) / open_trade.entry_price * 100
+                equity *= (1 + open_trade.pl_pct / 100)
+                peak_equity = max(peak_equity, equity)
+                dd = (peak_equity - equity) / peak_equity * 100
+                max_dd = max(max_dd, dd)
+                trades.append(open_trade)
+                open_trade = None
+            else:
+                continue
+
+        # Ensemble vote — pods run concurrently with per-pod timeout
+        h = closes[:i + 1]
+        hi_slice = highs[:i + 1]
+        lo_slice = lows[:i + 1]
+
+        voted = await sp.vote_concurrently(
+            h, hi_slice, lo_slice,
+            pod_a_kwargs=pod_a_kw,
+            per_pod_timeout_s=per_pod_timeout_s,
+        )
+        pod_a = voted["pods"]["A"]
+        pod_b = voted["pods"]["B"]
+        pod_c = voted["pods"]["C"]
+        ens = voted["ensemble"]
+
+        pod_tally[f"a_{pod_a['action'].lower()}"] += 1
+        pod_tally[f"b_{pod_b['action'].lower()}"] += 1
+        pod_tally[f"c_{pod_c['action'].lower()}"] += 1
+        pod_tally[f"ensemble_{ens['action'].lower()}"] += 1
+
+        if ens["action"] == "HOLD":
+            continue
+
+        direction = "buy" if ens["action"] == "LONG" else "sell"
+
+        # Apply same MTF + confluence gates AFTER the ensemble agrees — preserves parity.
+        mtf = _mtf_closes(i)
+        if not mtf_trend_agree(direction, h, mtf):
+            continue
+        if not indicator_confluence(direction, h):
+            continue
+
+        # Sizing — reuse Pod A's vol_amp if available, else estimate.
+        kronos_for_size = pod_a.get("kronos") if pod_a.get("kronos") else \
+            kronos_surrogate(h, hi_slice, lo_slice,
+                             upside_high=upside_high, upside_low=upside_low)
+        sized = size_position(base_units, ens["confidence"], kronos_for_size["vol_amp"])
+        if sized <= 0:
+            continue
+
+        entry = closes[i]
+        atr = _atr(highs[max(0, i - 30):i + 1], lows[max(0, i - 30):i + 1], h[max(0, i - 30):i + 1])
+        sl_dist = max(atr * atr_mult, entry * 0.003)
+        rr = max(
+            rr_base,
+            (rr_base + 1.0) if ens["confidence"] >= 9 else
+            (rr_base + 0.5) if ens["confidence"] >= 8 else rr_base
+        )
+        tp_dist = sl_dist * rr
+
+        if ens["action"] == "LONG":
+            sl = entry - sl_dist
+            tp = entry + tp_dist
+        else:
+            sl = entry + sl_dist
+            tp = entry - tp_dist
+
+        open_trade = TradeRecord(
+            bar_idx=i, entry_time=times[i], entry_price=entry,
+            side=ens["action"], units=sized, sl=sl, tp=tp,
+        )
+
+    if open_trade is not None:
+        last = closes[-1]
+        open_trade.exit_price = last
+        open_trade.exit_reason = "end"
+        open_trade.exit_time = times[-1]
+        if open_trade.side == "LONG":
+            open_trade.pl_pct = (last - open_trade.entry_price) / open_trade.entry_price * 100
+        else:
+            open_trade.pl_pct = (open_trade.entry_price - last) / open_trade.entry_price * 100
+        equity *= (1 + open_trade.pl_pct / 100)
+        trades.append(open_trade)
+
+    wins = [t for t in trades if t.pl_pct > 0]
+    losses = [t for t in trades if t.pl_pct <= 0]
+    result.trades = [asdict(t) for t in trades]
+    result.total_trades = len(trades)
+    result.wins = len(wins)
+    result.losses = len(losses)
+    result.win_rate = (len(wins) / len(trades) * 100.0) if trades else 0.0
+    result.total_pl_pct = (equity - 1.0) * 100
+    result.avg_win_pct = float(np.mean([t.pl_pct for t in wins])) if wins else 0.0
+    result.avg_loss_pct = float(np.mean([t.pl_pct for t in losses])) if losses else 0.0
+    result.expectancy = (
+        (result.win_rate / 100.0) * result.avg_win_pct
+        + ((1 - result.win_rate / 100.0)) * result.avg_loss_pct
+    )
+    result.max_drawdown_pct = max_dd
+    result.profit_factor, result.sharpe_ratio = _profit_factor_and_sharpe(trades)
+    result.pod_stats = pod_tally
     result.elapsed_seconds = (datetime.now(timezone.utc) - started).total_seconds()
     result.finished_at = datetime.now(timezone.utc).isoformat()
     return result
