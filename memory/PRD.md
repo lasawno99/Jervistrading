@@ -1,3 +1,51 @@
+## Live Brain — Shadow Pod Telemetry (2026-06-05, **NEW**, LLMQuant strategy)
+
+Built the LLMQuant Magents-style multi-agent observability layer. Backend runs
+Pod A/B/C live every 5 min on real yfinance bars for 7 instruments across
+3 asset classes — pure observability, workers untouched.
+
+### Backend (`backend/shadow_pods.py`)
+- Background asyncio loop, started in `server.py` startup alongside other tasks
+- Tracked: EUR_USD, GBP_USD, XAU_USD, BTC/USD, ETH/USD, NVDA, TSLA
+- Every `SHADOW_INTERVAL_S` (default 300s = 5 min): fetches recent bars via
+  the same `bt._fetch_bars` used by backtester (strict parity), runs
+  `sp.vote_concurrently` (asyncio.gather 3 pods, 10s per-pod timeout), persists
+  to MongoDB collection `shadow_votes`
+- Rolling retention: last `SHADOW_RETAIN_PER_SYMBOL` (default 200) per symbol
+- Cancellation-safe (SIGTERM lets current cycle finish then exits)
+
+### Endpoints (`backend/shadow_routes.py`)
+- `GET /api/shadow/latest` — newest ensemble + per-pod vote for each tracked symbol
+- `GET /api/shadow/history/{symbol}?limit=50` — vote history newest first
+- `GET /api/shadow/agreement?hours=24` — per-symbol LONG/SHORT/HOLD counts +
+  agreement_rate_pct (i.e. how often the ensemble actually fires entries)
+
+### Frontend (`frontend/src/components/v2/LiveBrainPanel.jsx`)
+- New card on the Agents tab, just below `WinRateTrendCard`, above `BacktestLab`
+- Headline tally: `↑X ↓Y —Z` ensemble votes right now + `actionable/total signals/24h`
+- One row per tracked instrument: symbol · last price · 3 pod pills (A/B/C, color-coded
+  by direction) · ensemble decision (LONG/SHORT/HOLD) · 24h fire-rate · age
+- Polls every 30s; data-testid attributes on every row + headline element
+
+### Why this is the LLMQuant strategy
+Magents/Alpha-Agent run multiple competing strategy pods in parallel; the value
+isn't the strategies themselves but the **observability + voting tally**. We
+now have live evidence of:
+  1. How often Pod B (mean-reversion) and Pod C (breakout) actually align with
+     Pod A (Tauric+Kronos) on real market conditions
+  2. Whether the 2-of-3 ensemble is too strict (too few signals) or too loose
+  3. Per-symbol agreement patterns — useful for deciding which instrument to
+     promote to paper trading FIRST
+
+### Verified end-to-end
+- Forced an immediate tick → 7/7 instruments evaluated, all HOLD (market chop)
+- `/api/shadow/latest` returns full payload with action + confidence per pod
+- Panel renders 7 rows + headline tally, refreshes every 30s, 19 votes already
+  in `shadow_votes` collection
+
+---
+
+
 ## SystemVitals replaces TradingPeersCluster (2026-06-05)
 
 User: "I don't wanna see the clusters. I'd rather just see that I'm making money and that my system is working."

@@ -21,6 +21,7 @@ import BotBrainPanel from "@/components/v2/BotBrainPanel";
 import WinRateTrendCard from "@/components/v2/WinRateTrendCard";
 import RiskPostureCard from "@/components/v2/RiskPostureCard";
 import BacktestLab from "@/components/v2/BacktestLab";
+import LiveBrainPanel from "@/components/v2/LiveBrainPanel";
 import { RiskOffBanner, RiskOffSheet, useRiskStatus } from "@/components/v2/RiskOff";
 import AskJarvisModal from "@/components/v2/AskJarvisModal";
 import BottomNav from "@/components/v2/BottomNav";
@@ -190,7 +191,8 @@ export default function App() {
                   </p>
                 </div>
                 <WinRateTrendCard delay={0.05} />
-                <BacktestLab delay={0.08} />
+                <LiveBrainPanel delay={0.07} />
+                <BacktestLab delay={0.1} />
                 <RiskPostureCard delay={0.1} />
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                   <AgentStatusCard delay={0.15} />

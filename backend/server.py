@@ -1650,6 +1650,12 @@ api_router_scaling = APIRouter(prefix="/api")
 api_router_scaling.include_router(sr.build_router(db))
 app.include_router(api_router_scaling)
 
+# Shadow pod telemetry (mounted under /api/shadow/*) — live Magents-style observability
+import shadow_routes as shr  # noqa: E402
+api_router_shadow = APIRouter(prefix="/api")
+api_router_shadow.include_router(shr.build_router(db))
+app.include_router(api_router_shadow)
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
@@ -1687,6 +1693,9 @@ async def on_startup():
     _bg_tasks.append(asyncio.create_task(scheduler_loop(db, jv.chat, broadcast_fn=tg.broadcast_text, interval_sec=30)))
     # Price-event trigger loop — every 8s
     _bg_tasks.append(asyncio.create_task(pt.trigger_loop(db, jv.chat, broadcast_fn=tg.broadcast_text, interval_sec=8)))
+    # Shadow Pod Telemetry — runs Pod A/B/C live every 5 min for observability
+    import shadow_pods as shp  # noqa: E402
+    _bg_tasks.append(asyncio.create_task(shp.shadow_loop(db)))
     # Auto-resume any live FX strategies that were running before restart
     try:
         n = await fxs.resume_active_strategies(db)
