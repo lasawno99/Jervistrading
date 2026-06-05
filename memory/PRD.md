@@ -1,3 +1,60 @@
+## AutoPilot — Autonomous Compare + Promote Pipeline (2026-06-05, **NEW**)
+
+User's repeated 3-step manual flow now fully autonomous: when an instrument hits
+≥30% shadow agreement with ≥20 actionable signals, AutoPilot auto-runs
+Compare A-vs-Ensemble, and either stages it for one-tap promote (default safe
+mode) or auto-applies the params (when user flips AUTO toggle).
+
+### Backend
+- `backend/autopilot.py` (NEW)
+  - `autopilot_loop(db)` — wakes every `AUTOPILOT_INTERVAL_S` (6h default)
+  - For each instrument with `shadow_votes` rate ≥ 30% AND ≥ 20 actionable in 24h
+    AND no compare run < 24h ago: runs `bt.run_backtest` + `bt.run_backtest_ensemble`,
+    evaluates the same 4-of-4 gate (WR↑ · PF↑ · Sharpe↑ · DD↓ → ≥3 must improve)
+  - Persists every run to `auto_compares` collection with status:
+    `auto_promoted` · `pending_review` · `blocked` · `user_promoted` · `dismissed`
+  - `auto_promote=true` → applies params via `instrument_configs` upsert (workers
+    poll this on next cycle — same path as the manual "Promote to Live Workers" button)
+  - Strict numpy-→-Python serialization (`_summary`) so MongoDB encoding never breaks
+- `backend/autopilot_routes.py` (NEW)
+  - `GET /api/autopilot/status` — settings + pending queue + last 10 recent + thresholds
+  - `POST /api/autopilot/settings` — toggle `enabled` and `auto_promote`
+  - `POST /api/autopilot/run-now` — kicks off an immediate scan
+  - `POST /api/autopilot/promote { symbol }` — manual one-tap promote of pending
+  - `POST /api/autopilot/dismiss { symbol }` — flush a pending row
+- `backend/server.py` — registered routes + started `autopilot.autopilot_loop` task
+- `backend/tests/test_autopilot.py` (NEW) — 5 regression tests covering gate
+  logic, summary serialization, threshold sanity
+
+### Frontend
+- `frontend/src/components/v2/AutoPilot.jsx` (NEW)
+  - Header: AutoPilot title + threshold line ("≥30% rate · ≥20 signals · every 6h")
+  - WATCH/AUTO toggle pill + "Run now" button (top right)
+  - Pending queue: per-instrument card showing before→after WR/PF/Sharpe/DD with
+    green/red coloring, "Promote to workers" + X dismiss buttons
+  - Recent decisions feed (last 5): symbol · WR · status pill · age
+  - Empty state: friendly explainer
+- `frontend/src/App.js` — imported and mounted on dashboard between AutoInsights and BrokerCarousel
+
+### How this closes the loop the user described
+> "When an instrument shows green % (≥30%), run Compare A vs Ensemble on it;
+>  if gate clears, promote via the existing Promote to Live Workers button"
+
+is now exactly:
+1. Shadow loop populates `agreement_rate_pct` per instrument (already running)
+2. AutoPilot tick reads agreement, picks qualified instruments, runs Compare
+3. If gate clears → row appears in AutoPilot card with one-tap promote
+4. (Optional) flip AUTO toggle → step 3 happens automatically without user
+
+User no longer needs to manually run any of those 3 steps. Default is WATCH
+(safe — needs your tap) so you stay in control. Flip AUTO when comfortable.
+
+### Tests
+- 21/21 passing (5 autopilot · 11 strategy_pods · 5 scaling_routes)
+
+---
+
+
 ## AutoInsights Card on Dashboard (2026-06-05)
 
 Per user: "watch for the scaling gate to clear; check shadow agreement". Built

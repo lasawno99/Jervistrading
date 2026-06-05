@@ -1656,6 +1656,12 @@ api_router_shadow = APIRouter(prefix="/api")
 api_router_shadow.include_router(shr.build_router(db))
 app.include_router(api_router_shadow)
 
+# AutoPilot — autonomous compare + promote pipeline (mounted under /api/autopilot/*)
+import autopilot_routes as apr  # noqa: E402
+api_router_autopilot = APIRouter(prefix="/api")
+api_router_autopilot.include_router(apr.build_router(db))
+app.include_router(api_router_autopilot)
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
@@ -1696,6 +1702,9 @@ async def on_startup():
     # Shadow Pod Telemetry — runs Pod A/B/C live every 5 min for observability
     import shadow_pods as shp  # noqa: E402
     _bg_tasks.append(asyncio.create_task(shp.shadow_loop(db)))
+    # AutoPilot — autonomous compare + (optional) promote every 6h on shadow-qualified instruments
+    import autopilot as ap  # noqa: E402
+    _bg_tasks.append(asyncio.create_task(ap.autopilot_loop(db)))
     # Auto-resume any live FX strategies that were running before restart
     try:
         n = await fxs.resume_active_strategies(db)

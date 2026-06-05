@@ -13,6 +13,7 @@ import MarketPulseStrip from "@/components/v2/MarketPulseStrip";
 import TradingPeersCluster from "@/components/v2/TradingPeersCluster";
 import SystemVitals from "@/components/v2/SystemVitals";
 import AutoInsights from "@/components/v2/AutoInsights";
+import AutoPilot from "@/components/v2/AutoPilot";
 import AgentStatusCard from "@/components/v2/AgentStatusCard";
 import AutomationCard from "@/components/v2/AutomationCard";
 import TopSignalsCard from "@/components/v2/TopSignalsCard";
@@ -163,6 +164,7 @@ export default function App() {
                 <MarketPulseStrip onRegimeClick={() => setRiskOpen(true)} />
                 <SystemVitals onOpenRisk={() => setRiskOpen(true)} />
                 <AutoInsights onJumpToAgents={() => setTab("agents")} />
+                <AutoPilot />
                 <BrokerCarousel />
               </div>
             )}
