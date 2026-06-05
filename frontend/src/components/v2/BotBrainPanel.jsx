@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import { AnimatePresence, motion } from "framer-motion";
-import { Brain, CheckCircle2, MinusCircle, ShieldAlert, XCircle } from "lucide-react";
+import { AlertTriangle, Brain, CheckCircle2, MinusCircle, ShieldAlert, XCircle } from "lucide-react";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -151,6 +151,17 @@ export const BotBrainPanel = ({ delay = 0.5 }) => {
     (c) => filter === "ALL" || (c.action || "").toUpperCase() === filter
   );
 
+  // Freshness check — most recent cycle timestamp vs now.
+  const latestCycle = (data.cycles || [])[0];
+  const latestTs = latestCycle?.timestamp ? new Date(latestCycle.timestamp).getTime() : 0;
+  const ageMin = latestTs ? Math.round((Date.now() - latestTs) / 60000) : null;
+  const stale = ageMin != null && ageMin > 30;
+  const ageLabel =
+    ageMin == null ? null
+    : ageMin < 60 ? `${ageMin}m ago`
+    : ageMin < 1440 ? `${Math.round(ageMin / 60)}h ago`
+    : `${Math.round(ageMin / 1440)}d ago`;
+
   return (
     <motion.section
       className="card p-5"
@@ -159,6 +170,30 @@ export const BotBrainPanel = ({ delay = 0.5 }) => {
       transition={{ duration: 0.55, delay, ease: [0.22, 1, 0.36, 1] }}
       data-testid="bot-brain-panel"
     >
+      {stale && (
+        <div
+          className="rounded-lg p-2.5 mb-3 flex items-start gap-2"
+          style={{
+            background: "rgba(239,68,68,0.08)",
+            border: "1px solid rgba(239,68,68,0.30)",
+          }}
+          data-testid="bot-brain-stale-banner"
+        >
+          <AlertTriangle size={13} style={{ color: "var(--down)", flexShrink: 0, marginTop: 1 }} />
+          <div className="text-[11px] leading-snug">
+            <div className="font-semibold" style={{ color: "var(--down)" }}>
+              Workers silent · last cycle {ageLabel}
+            </div>
+            <div className="text-white/55 mt-0.5">
+              No new decisions from <code className="text-white/75">jarvis-synth</code> or{" "}
+              <code className="text-white/75">jarvis-synth-alpaca</code>. Check Railway →
+              worker logs → ensure <code className="text-white/75">DASHBOARD_URL</code> +{" "}
+              <code className="text-white/75">BROKER_LOCK_TOKEN</code> are set and the workers
+              are running.
+            </div>
+          </div>
+        </div>
+      )}
       <header className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div className="flex items-center gap-2.5">
           <div
