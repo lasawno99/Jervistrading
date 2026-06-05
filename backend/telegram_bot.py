@@ -38,6 +38,17 @@ def is_configured() -> bool:
     return bool(os.environ.get("TELEGRAM_BOT_TOKEN", "").strip())
 
 
+def is_polling_enabled() -> bool:
+    """Telegram allows only ONE long-poller per bot token globally.
+
+    Set TELEGRAM_POLLING_ENABLED=false on any environment that should not
+    poll for updates (e.g. preview/dev when production owns the bot).
+    Outbound sendMessage broadcasts still work regardless.
+    """
+    flag = os.environ.get("TELEGRAM_POLLING_ENABLED", "true").strip().lower()
+    return flag != "false"
+
+
 def get_state() -> dict:
     return {
         "running": _state["running"],

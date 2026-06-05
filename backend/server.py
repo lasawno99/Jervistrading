@@ -1737,10 +1737,13 @@ async def on_startup():
     await te.ensure_account(db)
     await te.get_risk(db)  # ensure risk doc exists
     await tg.load_subscribers(db)
-    # Start telegram bot polling if configured
-    if tg.is_configured():
+    # Start telegram bot polling if configured AND polling enabled
+    # (Polling is disabled in preview so production owns the single long-poller slot.)
+    if tg.is_configured() and tg.is_polling_enabled():
         _bg_tasks.append(asyncio.create_task(tg.polling_loop(db, call_kimi_strict)))
         logger.info("Telegram polling task scheduled.")
+    elif tg.is_configured():
+        logger.info("Telegram token set but polling disabled (TELEGRAM_POLLING_ENABLED=false).")
     else:
         logger.info("TELEGRAM_BOT_TOKEN not set; polling disabled.")
     # Auto-trader loop always runs (will no-op when auto_mode off / no chats)
