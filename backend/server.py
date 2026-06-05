@@ -671,10 +671,34 @@ async def broker_sim_summary():
 
 @api_router.get("/broker/all")
 async def broker_all():
-    """Combined view: OANDA + Alpaca + Sim side-by-side, plus a unified Total Wealth."""
+    """Combined view: OANDA + Alpaca + Sim side-by-side, plus a unified Total Wealth.
+
+    Also enriches each broker dict with `month_pl` (USD, sum of closed_trades.pl
+    for that broker since the 1st of the current calendar month UTC).
+    """
     oanda = await broker_oanda_summary()
     alpaca = await broker_alpaca_summary()
     sim = await broker_sim_summary()
+
+    # Month-to-date P/L per broker — single aggregation, then split by key.
+    now_utc = datetime.now(timezone.utc)
+    month_start_iso = now_utc.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    mtd_pl = {"oanda": 0.0, "alpaca": 0.0, "sim": 0.0}
+    try:
+        pipeline = [
+            {"$match": {"ts": {"$gte": month_start_iso},
+                        "broker": {"$in": list(mtd_pl.keys())}}},
+            {"$group": {"_id": "$broker", "pl": {"$sum": "$pl"}}},
+        ]
+        async for row in db.closed_trades.aggregate(pipeline):
+            if row["_id"] in mtd_pl:
+                mtd_pl[row["_id"]] = float(row.get("pl") or 0.0)
+    except Exception:
+        pass  # fail-safe — keep zeros if aggregation errors
+
+    oanda["month_pl"] = round(mtd_pl["oanda"], 4)
+    alpaca["month_pl"] = round(mtd_pl["alpaca"], 4)
+    sim["month_pl"] = round(mtd_pl["sim"], 4)
 
     def _sum(*vals):
         return sum(float(v or 0) for v in vals if isinstance(v, (int, float)))
@@ -692,6 +716,7 @@ async def broker_all():
         + (alpaca.get("open_positions") or 0)
         + (sim.get("open_positions") or 0)
     )
+    combined_month_pl = _sum(*mtd_pl.values())
     return {
         "oanda": oanda,
         "alpaca": alpaca,
@@ -702,6 +727,8 @@ async def broker_all():
             "total_wealth": combined_wealth,
             "unrealized_pl": combined_unrealized,
             "open_positions": combined_positions,
+            "month_pl": round(combined_month_pl, 4),
+            "month_start": month_start_iso,
             "currency": "USD",
         },
         "as_of": datetime.now(timezone.utc).isoformat(),

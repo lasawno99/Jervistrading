@@ -56,7 +56,10 @@ const BrokerCard = ({ broker, data, idx }) => {
   const meta = BROKER_META[broker];
   const equity = data?.nav ?? 0;
   const pl = data?.dod_change ?? 0;
+  const monthPl = data?.month_pl ?? 0;
+  const lockedCash = data?.locked_profits ?? 0;
   const up = pl >= 0;
+  const monthUp = monthPl >= 0;
   const connected = data && data.source !== "mock";
 
   return (
@@ -102,19 +105,46 @@ const BrokerCard = ({ broker, data, idx }) => {
         </span>
       </div>
 
-      {/* EQUITY + P/L row */}
-      <div className="grid grid-cols-2 gap-3 mb-1">
+      {/* EQUITY + P/L (24H) row */}
+      <div className="grid grid-cols-2 gap-3 mb-2">
         <div>
           <div className="text-[9px] tracking-[0.10em] uppercase text-white/40 mb-0.5">Equity</div>
-          <div className="text-[14px] font-semibold tabular leading-tight">{fmtMoney(equity)}</div>
+          <div className="text-[14px] font-semibold tabular leading-tight" data-testid={`broker-equity-${broker}`}>
+            {fmtMoney(equity)}
+          </div>
         </div>
         <div>
           <div className="text-[9px] tracking-[0.10em] uppercase text-white/40 mb-0.5">P/L (24H)</div>
           <div
             className="text-[14px] font-semibold tabular leading-tight"
             style={{ color: up ? "var(--up)" : "var(--down)" }}
+            data-testid={`broker-pl-24h-${broker}`}
           >
             {fmtSignedMoney(pl)}
+          </div>
+        </div>
+      </div>
+
+      {/* MONTH GAIN + CASH SECURED row */}
+      <div className="grid grid-cols-2 gap-3 mb-1 pt-2 border-t border-white/[0.06]">
+        <div>
+          <div className="text-[9px] tracking-[0.10em] uppercase text-white/40 mb-0.5">Month gain</div>
+          <div
+            className="text-[13px] font-semibold tabular leading-tight"
+            style={{ color: monthUp ? "var(--up)" : monthPl === 0 ? "var(--text-2)" : "var(--down)" }}
+            data-testid={`broker-month-pl-${broker}`}
+          >
+            {fmtSignedMoney(monthPl)}
+          </div>
+        </div>
+        <div>
+          <div className="text-[9px] tracking-[0.10em] uppercase text-white/40 mb-0.5">Cash secured</div>
+          <div
+            className="text-[13px] font-semibold tabular leading-tight"
+            style={{ color: lockedCash > 0 ? "var(--accent-1)" : "var(--text-2)" }}
+            data-testid={`broker-cash-${broker}`}
+          >
+            {lockedCash > 0 ? fmtMoney(lockedCash) : "—"}
           </div>
         </div>
       </div>

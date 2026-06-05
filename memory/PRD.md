@@ -1,3 +1,29 @@
+## Broker Cards — Month Gain + Cash Secured (2026-06-05)
+
+User: "I do not see the month gain and cash flow from broker."
+
+### Backend (`backend/server.py` /api/broker/all)
+- Added `month_pl` to each broker payload (oanda · alpaca · sim) — sum of
+  `closed_trades.pl` for `broker == X` where `ts >= start_of_month_UTC`
+- Single Mongo aggregation pipeline (groups by broker in one pass)
+- Added `month_pl` + `month_start` to the `combined` payload
+- Fail-safe: aggregation errors leave zeros (no API break)
+
+### Frontend (`frontend/src/components/v2/BrokerCarousel.jsx`)
+- Each broker card now shows a divider then a second row with:
+  - **MONTH GAIN** — `+$X.XX` (green/grey/red) — data-testid `broker-month-pl-{broker}`
+  - **CASH SECURED** — `$X.XX` (accent-blue) or `—` when 0 — data-testid `broker-cash-{broker}`
+- Existing EQUITY + P/L (24H) row preserved on top
+- Mobile-first: same width, modest extra height (~30px) for the new row
+
+### Verified
+- `/api/broker/all` returns the new fields correctly
+- OANDA card data-testids return correct values (equity/24h/month/cash)
+- Layout preserved on iPhone 14 Pro viewport
+
+---
+
+
 ## AutoPilot — Autonomous Compare + Promote Pipeline (2026-06-05, **NEW**)
 
 User's repeated 3-step manual flow now fully autonomous: when an instrument hits
