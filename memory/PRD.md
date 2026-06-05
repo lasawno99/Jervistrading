@@ -1,3 +1,34 @@
+## AutoInsights Card on Dashboard (2026-06-05)
+
+Per user: "watch for the scaling gate to clear; check shadow agreement". Built
+a passive surfacing layer so they never have to manually check.
+
+### File: `frontend/src/components/v2/AutoInsights.jsx` (NEW)
+Pulls `/api/scaling/readiness` and `/api/shadow/agreement?hours=24` in parallel,
+refreshes every 60s. Two stacked sub-cards:
+
+1. **Scale 5→10 progress** — tap-through to Agents tab
+   - Twin progress bars (trades / win-rate) with green fill when threshold met
+   - Right-side label dynamically reads `19t · 40% WR to go` while locked,
+     flips to `TAP TO SCALE` (green) the moment the gate clears
+
+2. **Top firing · last 24h** — sorted by `agreement_rate_pct` desc, top 3
+   - Each row: symbol · `actionable/total` · color-coded % pill
+     (green ≥30%, amber ≥10%, grey < 10%)
+   - Empty state: "Shadow loop is gathering data…"
+
+### Wiring
+- Imported into `App.js` after `SystemVitals`, before `BrokerCarousel`
+- Receives `onJumpToAgents={() => setTab("agents")}` so both sub-cards link to the existing Agents tab with `LiveBrainPanel` + `BacktestLab`
+
+### Why this closes the loop
+User said "watch for…" twice. Now both watches are passive — the dashboard
+auto-pings the moment either condition shifts (gate clears OR an instrument
+starts firing signals reliably). No CLI polling, no Telegram dependency.
+
+---
+
+
 ## Live Brain — Shadow Pod Telemetry (2026-06-05, **NEW**, LLMQuant strategy)
 
 Built the LLMQuant Magents-style multi-agent observability layer. Backend runs
