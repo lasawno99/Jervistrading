@@ -1,3 +1,33 @@
+## SystemVitals replaces TradingPeersCluster (2026-06-05)
+
+User: "I don't wanna see the clusters. I'd rather just see that I'm making money and that my system is working."
+
+Swapped the decorative galaxy cluster for a focused ops card.
+
+### New: `frontend/src/components/v2/SystemVitals.jsx`
+- **Top-left**: Big green/red profit number `+$X` / `−$X` (total_wealth − $300k starting), with trending icon and accent-blue "$X cash secured" line below (only when locked_profits > 0)
+- **Top-right**: 3 colored dots (one per broker: OANDA · Alpaca · Sim) — green pulse if `as_of` < 5 min, red dim if stale. "3/3 live" tally underneath.
+- **Bottom rows**:
+  - Last trade: `Xm ago · SYMBOL SIDE ±X.XX%` (pulled from `/api/dashboard/recent-trades`)
+  - Risk gate: click-through row showing OPEN/PAUSED + manual override tag — opens the existing RiskOffSheet modal
+- Polls every 15s, loading guard prevents brief "−$300,000" flash on initial paint
+- Tracks: `/api/broker/all` + `/api/dashboard/recent-trades?limit=1` + `/api/risk/status`
+
+### Dashboard layout (mobile)
+1. RiskOffBanner (auto-hides when standby)
+2. TodayProfitHero
+3. MarketPulseStrip
+4. **SystemVitals** ← replaced TradingPeersCluster
+5. BrokerCarousel
+
+### Files
+- `frontend/src/components/v2/SystemVitals.jsx` (NEW)
+- `frontend/src/App.js` (swap)
+- `frontend/src/components/v2/TradingPeersCluster.jsx` kept on disk but no longer imported on the dashboard tab (zero callers)
+
+---
+
+
 ## Trading Cluster — Profit-First Center (2026-06-04)
 
 User feedback: "Remove the blue center dot. Show profits (e.g. +$42,000) and what cash I can pull out."

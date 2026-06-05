@@ -11,6 +11,7 @@ import TodayProfitHero from "@/components/v2/TodayProfitHero";
 import BrokerCarousel from "@/components/v2/BrokerCarousel";
 import MarketPulseStrip from "@/components/v2/MarketPulseStrip";
 import TradingPeersCluster from "@/components/v2/TradingPeersCluster";
+import SystemVitals from "@/components/v2/SystemVitals";
 import AgentStatusCard from "@/components/v2/AgentStatusCard";
 import AutomationCard from "@/components/v2/AutomationCard";
 import TopSignalsCard from "@/components/v2/TopSignalsCard";
@@ -158,7 +159,7 @@ export default function App() {
                 <RiskOffBanner status={riskStatus} onOpenControls={() => setRiskOpen(true)} />
                 <TodayProfitHero />
                 <MarketPulseStrip onRegimeClick={() => setRiskOpen(true)} />
-                <TradingPeersCluster onSelect={onPeerSelect} />
+                <SystemVitals onOpenRisk={() => setRiskOpen(true)} />
                 <BrokerCarousel />
               </div>
             )}
