@@ -680,25 +680,47 @@ async def broker_all():
     alpaca = await broker_alpaca_summary()
     sim = await broker_sim_summary()
 
-    # Month-to-date P/L per broker — single aggregation, then split by key.
+    # Month-to-date + Week-to-date P/L per broker — two aggregations, then split by key.
     now_utc = datetime.now(timezone.utc)
     month_start_iso = now_utc.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    # ISO week — Monday 00:00 UTC of the current week (weekday() == 0 means Monday).
+    week_start_dt = (now_utc - timedelta(days=now_utc.weekday())).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    week_start_iso = week_start_dt.isoformat()
     mtd_pl = {"oanda": 0.0, "alpaca": 0.0, "sim": 0.0}
+    wtd_pl = {"oanda": 0.0, "alpaca": 0.0, "sim": 0.0}
     try:
+        # Single aggregation covering both windows via $facet — one Mongo round-trip.
         pipeline = [
             {"$match": {"ts": {"$gte": month_start_iso},
                         "broker": {"$in": list(mtd_pl.keys())}}},
-            {"$group": {"_id": "$broker", "pl": {"$sum": "$pl"}}},
+            {"$facet": {
+                "month": [
+                    {"$group": {"_id": "$broker", "pl": {"$sum": "$pl"}}},
+                ],
+                "week": [
+                    {"$match": {"ts": {"$gte": week_start_iso}}},
+                    {"$group": {"_id": "$broker", "pl": {"$sum": "$pl"}}},
+                ],
+            }},
         ]
-        async for row in db.closed_trades.aggregate(pipeline):
-            if row["_id"] in mtd_pl:
-                mtd_pl[row["_id"]] = float(row.get("pl") or 0.0)
+        async for facets in db.closed_trades.aggregate(pipeline):
+            for row in facets.get("month", []):
+                if row["_id"] in mtd_pl:
+                    mtd_pl[row["_id"]] = float(row.get("pl") or 0.0)
+            for row in facets.get("week", []):
+                if row["_id"] in wtd_pl:
+                    wtd_pl[row["_id"]] = float(row.get("pl") or 0.0)
     except Exception:
         pass  # fail-safe — keep zeros if aggregation errors
 
     oanda["month_pl"] = round(mtd_pl["oanda"], 4)
     alpaca["month_pl"] = round(mtd_pl["alpaca"], 4)
     sim["month_pl"] = round(mtd_pl["sim"], 4)
+    oanda["week_pl"] = round(wtd_pl["oanda"], 4)
+    alpaca["week_pl"] = round(wtd_pl["alpaca"], 4)
+    sim["week_pl"] = round(wtd_pl["sim"], 4)
 
     def _sum(*vals):
         return sum(float(v or 0) for v in vals if isinstance(v, (int, float)))
@@ -717,6 +739,7 @@ async def broker_all():
         + (sim.get("open_positions") or 0)
     )
     combined_month_pl = _sum(*mtd_pl.values())
+    combined_week_pl = _sum(*wtd_pl.values())
     return {
         "oanda": oanda,
         "alpaca": alpaca,
@@ -729,6 +752,8 @@ async def broker_all():
             "open_positions": combined_positions,
             "month_pl": round(combined_month_pl, 4),
             "month_start": month_start_iso,
+            "week_pl": round(combined_week_pl, 4),
+            "week_start": week_start_iso,
             "currency": "USD",
         },
         "as_of": datetime.now(timezone.utc).isoformat(),
